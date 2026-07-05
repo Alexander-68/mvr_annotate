@@ -154,10 +154,10 @@
 
   const stage = document.getElementById('stage');
 
-  // Synthesize a short "ding" with the Web Audio API (no external assets).
-  // The context is created lazily so it's unlocked by the user's tap gesture.
+  // Synthesize a short tone with the Web Audio API (no external assets). The
+  // context is created lazily so it's unlocked by the user's tap gesture.
   let audioCtx = null;
-  function playDing() {
+  function playTone(freq) {
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
@@ -168,7 +168,7 @@
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now); // A5
+      osc.frequency.setValueAtTime(freq, now);
 
       gain.gain.setValueAtTime(0.0001, now);
       gain.gain.exponentialRampToValueAtTime(1.0, now + 0.01); // 0 dBFS peak
@@ -181,6 +181,11 @@
       // Audio is best-effort; ignore failures (e.g. autoplay restrictions).
     }
   }
+
+  // "ding" — a button was selected. "dong" — an octave lower, a long-press
+  // finished (deselected) a button.
+  function playDing() { playTone(880); } // A5
+  function playDong() { playTone(440); } // A4
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -195,6 +200,7 @@
   }
 
   const DRAG_THRESHOLD = 6; // px of movement before a tap counts as a drag
+  const LONG_PRESS_MS = 500; // hold this long (without moving) for a long-press
   const MIN_SCALE = 0.4;
   const MAX_SCALE = 5;
   const EDGE_FORCE = 40; // px of over-drag past top/bottom that flips to a row
@@ -371,6 +377,8 @@
       mode: null,          // null (pending) | 'drag' | 'pinch'
       tapButton: null,
       moved: false,
+      longPress: false,      // did the single-pointer hold cross LONG_PRESS_MS?
+      longPressTimer: null,
       startX: 0, startY: 0,
       startLeft: 0, startTop: 0,
       pinchStartDist: 0, pinchStartScale: 1,
@@ -408,7 +416,19 @@
     state.el.classList.toggle('horizontal', horizontal);
   }
 
-  function selectButton(state, btn) {
+  // Record an interaction on the active study's timeline. The marker is the
+  // button's label text; `status`, when given, tags how the (de)selection
+  // happened. Best-effort and a no-op off-device.
+  function injectEvent(btn, status) {
+    const marker = btn.querySelector('.label')?.textContent ?? btn.textContent;
+    const evt = { marker };
+    if (status) evt.status = status;
+    window.MvrOverlay?.injectTimelineEvent(JSON.stringify(evt));
+  }
+
+  // Select a button (ding). `status` is 'on' for a long-press select and
+  // omitted for a plain short-tap select.
+  function selectButton(state, btn, status) {
     // Only one selection per cluster; clusters are independent. Selection only
     // scales the label text, so the button box and cluster layout don't change.
     if (state.selected && state.selected !== btn) {
@@ -419,17 +439,33 @@
     // Fire the ding off the critical path so the selected state paints
     // immediately — rapid taps stay responsive and we don't wait on audio.
     setTimeout(playDing, 0);
+    injectEvent(btn, status);
+  }
 
-    // Record the tap as a custom event on the active study's timeline. The
-    // marker is the button's label text; best-effort and a no-op off-device.
-    const marker = btn.querySelector('.label')?.textContent ?? btn.textContent;
-    window.MvrOverlay?.injectTimelineEvent(JSON.stringify({ marker }));
+  // Deselect the already-selected button (dong). `status` is 'finish' for a
+  // short-tap unselect and 'off' for a long-press unselect.
+  function unselectButton(state, btn, status) {
+    btn.classList.remove('selected');
+    state.selected = null;
+    setTimeout(playDong, 0);
+    injectEvent(btn, status);
+  }
+
+  // Cancel a pending long-press timer (a drag or a second finger disqualifies
+  // the hold). Leaves state.longPress as-is; callers reset it where needed.
+  function clearLongPress(state) {
+    if (state.longPressTimer) {
+      clearTimeout(state.longPressTimer);
+      state.longPressTimer = null;
+    }
   }
 
   function beginPinch(state) {
     state.mode = 'pinch';
     state.tapButton = null;
     state.el.classList.remove('dragging');
+    clearLongPress(state);
+    state.longPress = false;
 
     const [p0, p1] = [...state.pointers.values()];
     const m = midpoint(p0, p1);
@@ -457,6 +493,10 @@
         state.startY = e.clientY;
         state.startLeft = state.left;
         state.startTop = state.top;
+        // Start the long-press clock; a drag or second finger cancels it.
+        state.longPress = false;
+        clearLongPress(state);
+        state.longPressTimer = setTimeout(() => { state.longPress = true; }, LONG_PRESS_MS);
       } else if (state.pointers.size === 2) {
         beginPinch(state);
       }
@@ -484,6 +524,8 @@
           state.moved = true;
           state.mode = 'drag';
           el.classList.add('dragging');
+          clearLongPress(state); // a drag is not a hold
+          state.longPress = false;
         }
         if (state.mode === 'drag') {
           const desiredL = state.startLeft + dx;
@@ -569,14 +611,25 @@
       }
 
       if (state.pointers.size === 0) {
+        clearLongPress(state);
         const wasTap = state.mode !== 'drag' && state.mode !== 'pinch';
+        const wasLongPress = state.longPress;
         const btn = state.tapButton;
         el.classList.remove('dragging');
         state.mode = null;
         state.tapButton = null;
         state.moved = false;
+        state.longPress = false;
         if (wasTap && btn) {
-          selectButton(state, btn);
+          // Tapping/holding the already-selected button deselects it (dong);
+          // otherwise it's a select (ding). A long-press tags the event with an
+          // explicit on/off status; a short tap selects bare and finishes with
+          // "finish".
+          if (btn === state.selected) {
+            unselectButton(state, btn, wasLongPress ? 'off' : 'finish');
+          } else {
+            selectButton(state, btn, wasLongPress ? 'on' : undefined);
+          }
         } else {
           markHome(state);  // a drag/pinch set a new intended position
           saveLayout();     // persist the changed layout
@@ -605,7 +658,7 @@
   );
   const cluster2 = createCluster(
     'actions',
-    ['Injection', 'Withdrawal', 'Biopsy'],
+    ['Injection', 'Withdrawal', 'Hemostasis', 'Biopsy', 'Polyp'],
     40, 100,
   );
   // Place the second cluster toward the right edge, clear of the first so the
