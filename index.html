@@ -222,6 +222,37 @@
     return false;
   }
 
+  // Where a cluster docked to `edge` rests in the stack of OTHER clusters docked
+  // to the same edge, given its horizontal span [l, l+w] and its own vertical
+  // center (ourTop + ourH/2). For 'top' this is the floor to sit on (0, or the
+  // bottom of an overlapping top-docked sibling); for 'bottom' it's the ceiling
+  // to hang from (viewport bottom, or the top of an overlapping bottom-docked
+  // sibling). Only siblings that overlap horizontally AND sit on the far side of
+  // our center count, so a row rests against the sibling it's dragged toward
+  // rather than both rows fighting to rest on each other. Rows side by side (no
+  // X overlap) both sit flush against the edge.
+  function dockAnchor(state, edge, l, w, ourTop, ourH) {
+    const ourCenter = ourTop + ourH / 2;
+    if (edge === 'top') {
+      let floor = 0;
+      for (const o of clusters) {
+        if (o === state || o.dock !== 'top') continue;
+        const ow = o.el.offsetWidth * o.scale, oh = o.el.offsetHeight * o.scale;
+        const ol = o.left, or = o.left + ow;
+        if (l < or && l + w > ol && o.top + oh / 2 < ourCenter) floor = Math.max(floor, o.top + oh);
+      }
+      return floor;
+    }
+    let ceil = window.innerHeight;
+    for (const o of clusters) {
+      if (o === state || o.dock !== 'bottom') continue;
+      const ow = o.el.offsetWidth * o.scale, oh = o.el.offsetHeight * o.scale;
+      const ol = o.left, or = o.left + ow;
+      if (l < or && l + w > ol && o.top + oh / 2 > ourCenter) ceil = Math.min(ceil, o.top);
+    }
+    return ceil;
+  }
+
   // Clamp a cluster's top-left so its full (scaled) box stays inside the canvas.
   function clampIntoCanvas(state) {
     const w = state.el.offsetWidth * state.scale;
@@ -446,11 +477,11 @@
           const desiredT = state.startTop + dy;
 
           // Orientation: flip to a horizontal row once the cluster is shoved
-          // past the top/bottom edge by EDGE_FORCE, and keep it docked there
-          // until it's dragged back away. The over-drag is judged against the
-          // *natural vertical* height (baseVH) — a constant that doesn't change
-          // when the box flips — so the flip can't feed back on its own trigger
-          // and oscillate. Top uses the box's top edge, bottom uses its bottom.
+          // past the top/bottom edge by EDGE_FORCE. The over-drag is judged
+          // against the *natural vertical* height (baseVH) — a constant that
+          // doesn't change when the box flips — so the flip can't feed back on
+          // its own trigger and oscillate. Top uses the box's top edge, bottom
+          // its bottom.
           const vH = state.baseVH * state.scale;
           const maxTopV = Math.max(0, window.innerHeight - vH);
           const overTop = desiredT <= 0 ? -desiredT : 0;
@@ -458,22 +489,44 @@
           if (!state.horizontal) {
             if (overTop > EDGE_FORCE) { setOrientation(state, true); state.dock = 'top'; }
             else if (overBottom > EDGE_FORCE) { setOrientation(state, true); state.dock = 'bottom'; }
-          } else {
-            const stillDocked =
-              (state.dock === 'top' && desiredT <= 0) ||
-              (state.dock === 'bottom' && desiredT >= maxTopV);
-            if (!stillDocked) { setOrientation(state, false); state.dock = null; }
           }
 
-          // Re-measure after any orientation change (it reflows the box).
-          const w = el.offsetWidth * state.scale;
-          const h = el.offsetHeight * state.scale;
-          const pL = clamp(desiredL, 0, Math.max(0, window.innerWidth - w));
-          let pT = clamp(desiredT, 0, Math.max(0, window.innerHeight - h));
-          // While docked as a row, pin it flush to the edge it's docked against
-          // (the finger's top-left would otherwise float the short row inward).
-          if (state.horizontal && state.dock === 'bottom') pT = Math.max(0, window.innerHeight - h);
-          else if (state.horizontal && state.dock === 'top') pT = 0;
+          // Measure the (possibly just-flipped) box.
+          let w = el.offsetWidth * state.scale;
+          let h = el.offsetHeight * state.scale;
+          let pL = clamp(desiredL, 0, Math.max(0, window.innerWidth - w));
+
+          // While docked as a row, stack it against same-edge siblings: rest on
+          // the floor below a top-docked row, or hang from the ceiling above a
+          // bottom-docked row (dockAnchor). The dock zone is still reasoned in
+          // *vertical* height so the flip trigger and this revert test share a
+          // stable metric; revert to a vertical stack once the finger pulls the
+          // cluster off its resting slot back toward mid-screen.
+          if (state.horizontal) {
+            const anchor = dockAnchor(state, state.dock, pL, w, desiredT, h);
+            const stillDocked =
+              (state.dock === 'top' && desiredT <= anchor) ||
+              (state.dock === 'bottom' && desiredT >= anchor - vH);
+            if (!stillDocked) {
+              setOrientation(state, false);
+              state.dock = null;
+              w = el.offsetWidth * state.scale;
+              h = el.offsetHeight * state.scale;
+              pL = clamp(desiredL, 0, Math.max(0, window.innerWidth - w));
+            }
+          }
+
+          // Target top: the stacked row slot while docked, else the free
+          // (clamped) drag position.
+          let pT;
+          if (!state.horizontal) {
+            pT = clamp(desiredT, 0, Math.max(0, window.innerHeight - h));
+          } else if (state.dock === 'top') {
+            pT = clamp(dockAnchor(state, 'top', pL, w, desiredT, h), 0, Math.max(0, window.innerHeight - h));
+          } else {
+            pT = clamp(dockAnchor(state, 'bottom', pL, w, desiredT, h) - h, 0, Math.max(0, window.innerHeight - h));
+          }
+
           const fits = (l, t) => !hitsOtherCluster(state, { l, t, r: l + w, b: t + h });
           // Slide along whichever axis stays clear so clusters never overlap.
           if (fits(pL, pT)) { state.left = pL; state.top = pT; }
