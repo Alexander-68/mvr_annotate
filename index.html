@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Toggle Button Test</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    touch-action: manipulation;
+  }
+
+  #stage {
+    position: fixed;
+    inset: 0;
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    border: 0;
+    outline: none;
+    background: transparent;
+  }
+
+  /* A cluster is a vertical stack of buttons that drags and zooms as one unit.
+     Position is held in explicit left/top; zoom is a top-left-anchored scale so
+     the origin stays put while the cluster grows/shrinks. */
+  .cluster {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    transform-origin: top left;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cluster.dragging {
+    cursor: grabbing;
+  }
+
+  /* Every button in a cluster is the same size. font-size/weight are constant
+     (they drive layout), so the box never changes; emphasis is done purely with
+     a transform on the inner label, which doesn't affect layout. */
+  .cluster button {
+    padding: 12px 10px;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    overflow: hidden; /* guard: enlarged selected label stays within the box */
+    touch-action: none;
+    cursor: inherit;
+  }
+
+  /* Stack tight: buttons share an edge — one button's bottom outline is the
+     next button's top outline. The -2px margin overlaps the two borders into a
+     single line while every button keeps the same box size. Only the cluster's
+     outer corners are rounded. */
+  .cluster button:not(:first-child) {
+    margin-top: -2px;
+  }
+  .cluster button:first-child {
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+  }
+  .cluster button:last-child {
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+  }
+
+  /* Horizontal mode: same buttons laid out in a row instead of a column. The
+     tight-stacking trick is mirrored onto the X axis — the -2px shared edge
+     moves to the left, and the rounded corners move to the row's two ends. */
+  .cluster.horizontal {
+    flex-direction: row;
+  }
+  .cluster.horizontal button:not(:first-child) {
+    margin-top: 0;
+    margin-left: -2px;
+  }
+  .cluster.horizontal button:first-child {
+    border-radius: 0;
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
+  }
+  .cluster.horizontal button:last-child {
+    border-radius: 0;
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
+  }
+
+  .cluster button .label {
+    display: inline-block;
+    transform-origin: center;
+    transform: scale(0.8); /* idle: text sits smaller inside the button */
+    transition: transform 0.12s ease;
+  }
+
+  .cluster button.selected {
+    /* raise above neighbors so the whole yellow outline shows (the shared
+       edges would otherwise be overpainted by the adjacent buttons' borders) */
+    position: relative;
+    z-index: 1;
+    color: #ffdd00; /* selected: yellow text + yellow border */
+    border-color: #ffdd00;
+  }
+
+  .cluster button.selected .label {
+    /* enlarge the text within the same button area; fake-bold via an extra
+       glyph-hugging shadow so the font-weight (and thus layout) stays fixed */
+    transform: scale(1);
+    text-shadow: 0 0 1px #ffdd00, 0 1px 3px rgba(0, 0, 0, 0.9);
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="canvas"></canvas>
+</div>
+
+<script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  const stage = document.getElementById('stage');
+
+  // Synthesize a short "ding" with the Web Audio API (no external assets).
+  // The context is created lazily so it's unlocked by the user's tap gesture.
+  let audioCtx = null;
+  function playDing() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = audioCtx || new Ctx();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now); // A5
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(1.0, now + 0.01); // 0 dBFS peak
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.36);
+    } catch (_) {
+      // Audio is best-effort; ignore failures (e.g. autoplay restrictions).
+    }
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function dist(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function midpoint(a, b) {
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
+  const DRAG_THRESHOLD = 6; // px of movement before a tap counts as a drag
+  const MIN_SCALE = 0.4;
+  const MAX_SCALE = 5;
+  const EDGE_FORCE = 40; // px of over-drag past top/bottom that flips to a row
+
+  // Registry of all clusters, used for the "clusters must not overlap" rule.
+  const clusters = [];
+
+  // A cluster's current on-screen box. offsetWidth/Height are the unscaled
+  // layout size (transforms don't affect them), so multiply by the scale.
+  function clusterRect(state) {
+    const w = state.el.offsetWidth * state.scale;
+    const h = state.el.offsetHeight * state.scale;
+    return { l: state.left, t: state.top, r: state.left + w, b: state.top + h };
+  }
+
+  function rectsOverlap(a, b) {
+    return a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t;
+  }
+
+  function hitsOtherCluster(state, rect) {
+    for (const other of clusters) {
+      if (other === state) continue;
+      if (rectsOverlap(rect, clusterRect(other))) return true;
+    }
+    return false;
+  }
+
+  // Clamp a cluster's top-left so its full (scaled) box stays inside the canvas.
+  function clampIntoCanvas(state) {
+    const w = state.el.offsetWidth * state.scale;
+    const h = state.el.offsetHeight * state.scale;
+    state.left = clamp(state.left, 0, Math.max(0, window.innerWidth - w));
+    state.top = clamp(state.top, 0, Math.max(0, window.innerHeight - h));
+  }
+
+  // Apply a zoom toward a focal point, capped so the box can't leave the canvas
+  // or overlap another cluster. focalLocal is the focal point in the cluster's
+  // own unscaled coordinates; focalScreen is where that point should stay.
+  function applyZoom(state, desiredScale, focalScreenX, focalScreenY, focalLocalX, focalLocalY) {
+    const w0 = state.el.offsetWidth;
+    const h0 = state.el.offsetHeight;
+    // Cap scale so the box can't exceed the canvas in either dimension.
+    const canvasMax = Math.min(window.innerWidth / w0, window.innerHeight / h0);
+    const newScale = clamp(desiredScale, MIN_SCALE, Math.min(MAX_SCALE, canvasMax));
+
+    let nl = focalScreenX - newScale * focalLocalX;
+    let nt = focalScreenY - newScale * focalLocalY;
+    const w = w0 * newScale;
+    const h = h0 * newScale;
+    nl = clamp(nl, 0, Math.max(0, window.innerWidth - w));
+    nt = clamp(nt, 0, Math.max(0, window.innerHeight - h));
+
+    // Reject a zoom step that would overlap another cluster.
+    if (hitsOtherCluster(state, { l: nl, t: nt, r: nl + w, b: nt + h })) return;
+
+    state.scale = newScale;
+    state.left = nl;
+    state.top = nt;
+    apply(state);
+  }
+
+  // Build one independent cluster from a list of button labels.
+  function createCluster(labels, left, top) {
+    const el = document.createElement('div');
+    el.className = 'cluster';
+    for (const label of labels) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const span = document.createElement('span');
+      span.className = 'label';
+      span.textContent = label;
+      btn.appendChild(span);
+      el.appendChild(btn);
+    }
+    stage.appendChild(el);
+
+    const state = {
+      el,
+      left,
+      top,
+      scale: 1,
+      baseVH: el.offsetHeight, // natural vertical (column) box height, unscaled
+      horizontal: false,       // true while docked as a row against top/bottom
+      dock: null,              // 'top' | 'bottom' | null — which edge it's docked to
+      selected: null,
+      pointers: new Map(), // pointerId -> {x, y}
+      mode: null,          // null (pending) | 'drag' | 'pinch'
+      tapButton: null,
+      moved: false,
+      startX: 0, startY: 0,
+      startLeft: 0, startTop: 0,
+      pinchStartDist: 0, pinchStartScale: 1,
+      focalX: 0, focalY: 0, // pinch focal point in cluster-local (pre-scale) coords
+    };
+
+    apply(state);
+    setupCluster(state);
+    clusters.push(state);
+    return state;
+  }
+
+  function apply(state) {
+    state.el.style.left = `${state.left}px`;
+    state.el.style.top = `${state.top}px`;
+    state.el.style.transform = `scale(${state.scale})`;
+  }
+
+  // Toggle a cluster between the default vertical stack and a horizontal row.
+  // Adding/removing the class reflows the element synchronously, so callers can
+  // re-measure offsetWidth/Height right after to reposition against the change.
+  function setOrientation(state, horizontal) {
+    if (state.horizontal === horizontal) return;
+    state.horizontal = horizontal;
+    state.el.classList.toggle('horizontal', horizontal);
+  }
+
+  function selectButton(state, btn) {
+    // Only one selection per cluster; clusters are independent. Selection only
+    // scales the label text, so the button box and cluster layout don't change.
+    if (state.selected && state.selected !== btn) {
+      state.selected.classList.remove('selected');
+    }
+    btn.classList.add('selected');
+    state.selected = btn;
+    playDing();
+
+    // Record the tap as a custom event on the active study's timeline. The
+    // marker is the button's label text; best-effort and a no-op off-device.
+    const marker = btn.querySelector('.label')?.textContent ?? btn.textContent;
+    window.MvrOverlay?.injectTimelineEvent(JSON.stringify({ marker }));
+  }
+
+  function beginPinch(state) {
+    state.mode = 'pinch';
+    state.tapButton = null;
+    state.el.classList.remove('dragging');
+
+    const [p0, p1] = [...state.pointers.values()];
+    const m = midpoint(p0, p1);
+    state.pinchStartDist = dist(p0, p1) || 1;
+    state.pinchStartScale = state.scale;
+    state.focalX = (m.x - state.left) / state.scale;
+    state.focalY = (m.y - state.top) / state.scale;
+  }
+
+  function setupCluster(state) {
+    const el = state.el;
+
+    el.addEventListener('pointerdown', (e) => {
+      // Claim this gesture for the web UI so the native layer doesn't treat it
+      // as a click-through to the camera controls underneath.
+      window.MvrOverlay?.reportInteractive();
+      el.setPointerCapture(e.pointerId);
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (state.pointers.size === 1) {
+        state.mode = null;
+        state.moved = false;
+        state.tapButton = e.target.closest('button');
+        state.startX = e.clientX;
+        state.startY = e.clientY;
+        state.startLeft = state.left;
+        state.startTop = state.top;
+      } else if (state.pointers.size === 2) {
+        beginPinch(state);
+      }
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      const p = state.pointers.get(e.pointerId);
+      if (!p) return;
+      p.x = e.clientX;
+      p.y = e.clientY;
+
+      if (state.mode === 'pinch' && state.pointers.size >= 2) {
+        const [p0, p1] = [...state.pointers.values()];
+        const m = midpoint(p0, p1);
+        const ratio = dist(p0, p1) / state.pinchStartDist;
+        // Keep the focal point pinned under the fingers' midpoint.
+        applyZoom(state, state.pinchStartScale * ratio, m.x, m.y, state.focalX, state.focalY);
+        return;
+      }
+
+      if (state.pointers.size === 1) {
+        const dx = e.clientX - state.startX;
+        const dy = e.clientY - state.startY;
+        if (!state.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+          state.moved = true;
+          state.mode = 'drag';
+          el.classList.add('dragging');
+        }
+        if (state.mode === 'drag') {
+          const desiredL = state.startLeft + dx;
+          const desiredT = state.startTop + dy;
+
+          // Orientation: flip to a horizontal row once the cluster is shoved
+          // past the top/bottom edge by EDGE_FORCE, and keep it docked there
+          // until it's dragged back away. The over-drag is judged against the
+          // *natural vertical* height (baseVH) — a constant that doesn't change
+          // when the box flips — so the flip can't feed back on its own trigger
+          // and oscillate. Top uses the box's top edge, bottom uses its bottom.
+          const vH = state.baseVH * state.scale;
+          const maxTopV = Math.max(0, window.innerHeight - vH);
+          const overTop = desiredT <= 0 ? -desiredT : 0;
+          const overBottom = (maxTopV > 0 && desiredT >= maxTopV) ? desiredT - maxTopV : 0;
+          if (!state.horizontal) {
+            if (overTop > EDGE_FORCE) { setOrientation(state, true); state.dock = 'top'; }
+            else if (overBottom > EDGE_FORCE) { setOrientation(state, true); state.dock = 'bottom'; }
+          } else {
+            const stillDocked =
+              (state.dock === 'top' && desiredT <= 0) ||
+              (state.dock === 'bottom' && desiredT >= maxTopV);
+            if (!stillDocked) { setOrientation(state, false); state.dock = null; }
+          }
+
+          // Re-measure after any orientation change (it reflows the box).
+          const w = el.offsetWidth * state.scale;
+          const h = el.offsetHeight * state.scale;
+          const pL = clamp(desiredL, 0, Math.max(0, window.innerWidth - w));
+          let pT = clamp(desiredT, 0, Math.max(0, window.innerHeight - h));
+          // While docked as a row, pin it flush to the edge it's docked against
+          // (the finger's top-left would otherwise float the short row inward).
+          if (state.horizontal && state.dock === 'bottom') pT = Math.max(0, window.innerHeight - h);
+          else if (state.horizontal && state.dock === 'top') pT = 0;
+          const fits = (l, t) => !hitsOtherCluster(state, { l, t, r: l + w, b: t + h });
+          // Slide along whichever axis stays clear so clusters never overlap.
+          if (fits(pL, pT)) { state.left = pL; state.top = pT; }
+          else if (fits(pL, state.top)) { state.left = pL; }
+          else if (fits(state.left, pT)) { state.top = pT; }
+          apply(state);
+        }
+      }
+    });
+
+    function onUp(e) {
+      if (!state.pointers.has(e.pointerId)) return;
+      state.pointers.delete(e.pointerId);
+      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+
+      // Pinch -> single finger: keep dragging with the remaining pointer,
+      // rebasing so the cluster doesn't jump.
+      if (state.pointers.size === 1 && state.mode === 'pinch') {
+        const pt = [...state.pointers.values()][0];
+        state.mode = 'drag';
+        state.moved = true;
+        state.startX = pt.x;
+        state.startY = pt.y;
+        state.startLeft = state.left;
+        state.startTop = state.top;
+        return;
+      }
+
+      if (state.pointers.size === 0) {
+        const wasTap = state.mode !== 'drag' && state.mode !== 'pinch';
+        const btn = state.tapButton;
+        el.classList.remove('dragging');
+        state.mode = null;
+        state.tapButton = null;
+        state.moved = false;
+        if (wasTap && btn) {
+          selectButton(state, btn);
+        }
+      }
+    }
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+
+    // Mouse-wheel zoom, focused on the cursor position.
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      window.MvrOverlay?.reportInteractive();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const localX = (e.clientX - state.left) / state.scale;
+      const localY = (e.clientY - state.top) / state.scale;
+      applyZoom(state, state.scale * factor, e.clientX, e.clientY, localX, localY);
+    }, { passive: false });
+  }
+
+  const cluster1 = createCluster(
+    ['Illeum', 'R.Colon', 'Tv.Colon', 'L.Colon', 'S.Colon', 'Rectum'],
+    40, 100,
+  );
+  const cluster2 = createCluster(
+    ['Injection', 'Withdrawal', 'Biopsy'],
+    40, 100,
+  );
+  // Place the second cluster toward the right edge, clear of the first so the
+  // two don't start out overlapping.
+  cluster2.left = Math.max(
+    cluster1.left + cluster1.el.offsetWidth + 24,
+    window.innerWidth - cluster2.el.offsetWidth - 40,
+  );
+  clampIntoCanvas(cluster2);
+  apply(cluster2);
+
+  // Keep every cluster inside the canvas after a viewport resize.
+  window.addEventListener('resize', () => {
+    for (const c of clusters) {
+      clampIntoCanvas(c);
+      apply(c);
+    }
+  });
+</script>
+</body>
+</html>
