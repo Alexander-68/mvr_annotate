@@ -273,14 +273,16 @@
 
   function saveLayout() {
     try {
-      const data = {};
+      // Update in place (never drop entries) so a submenu's spot is remembered
+      // after it closes and reused the next time it opens. savedLayout is kept in
+      // sync with storage so a re-opened submenu reads its latest position.
       for (const c of clusters) {
-        data[c.id] = {
+        savedLayout[c.id] = {
           left: c.left, top: c.top, scale: c.scale,
           horizontal: c.horizontal, dock: c.dock,
         };
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedLayout));
     } catch (_) {
       // Storage is best-effort (private mode, quota); ignore failures.
     }
@@ -347,7 +349,7 @@
 
   // Build one independent cluster from a list of button labels. `id` is a stable
   // key used to persist/restore this cluster's layout across sessions.
-  function createCluster(id, labels, left, top) {
+  function createCluster(id, labels, left, top, exclusive = true, transient = false) {
     const el = document.createElement('div');
     el.className = 'cluster';
     for (const label of labels) {
@@ -372,7 +374,11 @@
       baseVH: el.offsetHeight, // natural vertical (column) box height, unscaled
       horizontal: false,       // true while docked as a row against top/bottom
       dock: null,              // 'top' | 'bottom' | null — which edge it's docked to
-      selected: null,
+      exclusive,            // true: one selection per cluster; false: independent
+      transient,            // true: a pop-up submenu — not built at page load and
+                            // its selection is discarded, but its position persists
+      markerOverride: null, // when set, buttons inject {marker, modifier} events
+      selected: null,       // last-selected button (only meaningful when exclusive)
       pointers: new Map(), // pointerId -> {x, y}
       mode: null,          // null (pending) | 'drag' | 'pinch'
       tapButton: null,
@@ -388,7 +394,7 @@
     apply(state);
     setupCluster(state);
     clusters.push(state);
-    state.restored = restoreLayout(state); // override defaults with saved layout
+    state.restored = transient ? false : restoreLayout(state); // saved layout
     return state;
   }
 
@@ -419,9 +425,13 @@
   // Record an interaction on the active study's timeline. The marker is the
   // button's label text; `status`, when given, tags how the (de)selection
   // happened. Best-effort and a no-op off-device.
-  function injectEvent(btn, status) {
-    const marker = btn.querySelector('.label')?.textContent ?? btn.textContent;
-    const evt = { marker };
+  function injectEvent(state, btn, status) {
+    const label = btn.querySelector('.label')?.textContent ?? btn.textContent;
+    // A submenu cluster fixes the marker to its host button's label and reports
+    // its own button as a `modifier`; ordinary clusters use the button as marker.
+    const evt = state.markerOverride
+      ? { marker: state.markerOverride, modifier: label }
+      : { marker: label };
     if (status) evt.status = status;
     window.MvrOverlay?.injectTimelineEvent(JSON.stringify(evt));
   }
@@ -429,9 +439,10 @@
   // Select a button (ding). `status` is 'on' for a long-press select and
   // omitted for a plain short-tap select.
   function selectButton(state, btn, status) {
-    // Only one selection per cluster; clusters are independent. Selection only
+    // Exclusive clusters keep a single selection (clear the previous one);
+    // non-exclusive clusters let each button toggle independently. Selection only
     // scales the label text, so the button box and cluster layout don't change.
-    if (state.selected && state.selected !== btn) {
+    if (state.exclusive && state.selected && state.selected !== btn) {
       state.selected.classList.remove('selected');
     }
     btn.classList.add('selected');
@@ -439,16 +450,16 @@
     // Fire the ding off the critical path so the selected state paints
     // immediately — rapid taps stay responsive and we don't wait on audio.
     setTimeout(playDing, 0);
-    injectEvent(btn, status);
+    injectEvent(state, btn, status);
   }
 
   // Deselect the already-selected button (dong). `status` is 'finish' for a
   // short-tap unselect and 'off' for a long-press unselect.
   function unselectButton(state, btn, status) {
     btn.classList.remove('selected');
-    state.selected = null;
+    if (state.selected === btn) state.selected = null;
     setTimeout(playDong, 0);
-    injectEvent(btn, status);
+    injectEvent(state, btn, status);
   }
 
   // Cancel a pending long-press timer (a drag or a second finger disqualifies
@@ -493,6 +504,21 @@
         state.startY = e.clientY;
         state.startLeft = state.left;
         state.startTop = state.top;
+        // If we're grabbing an already-docked row, its stored top is in
+        // horizontal-row coordinates (a thin box pinned to the edge). But the
+        // flip/unstick math reasons in vertical-stack coordinates, where
+        // desiredT is the top the vertical stack WOULD occupy and the bottom
+        // revert boundary sits a full stack-height (vH) above the edge. Left as
+        // is, unsticking a docked row would demand dragging almost a whole
+        // stack-height away from the edge. Re-seed startTop onto that boundary
+        // (bottom: anchor - vH; top: anchor) so a small pull off the edge
+        // unsticks it, matching how the top edge already behaves.
+        if (state.horizontal) {
+          const w0 = el.offsetWidth * state.scale;
+          const h0 = el.offsetHeight * state.scale;
+          const anchor = dockAnchor(state, state.dock, state.left, w0, state.top, h0);
+          state.startTop = state.dock === 'bottom' ? anchor - state.baseVH * state.scale : anchor;
+        }
         // Start the long-press clock; a drag or second finger cancels it.
         state.longPress = false;
         clearLongPress(state);
@@ -528,8 +554,8 @@
           state.longPress = false;
         }
         if (state.mode === 'drag') {
-          const desiredL = state.startLeft + dx;
-          const desiredT = state.startTop + dy;
+          let desiredL = state.startLeft + dx;
+          let desiredT = state.startTop + dy;
 
           // Orientation: flip to a horizontal row once the cluster is shoved
           // past the top/bottom edge by EDGE_FORCE. The over-drag is judged
@@ -563,10 +589,25 @@
               (state.dock === 'top' && desiredT <= anchor) ||
               (state.dock === 'bottom' && desiredT >= anchor - vH);
             if (!stillDocked) {
+              const wasBottom = state.dock === 'bottom';
               setOrientation(state, false);
               state.dock = null;
               w = el.offsetWidth * state.scale;
               h = el.offsetHeight * state.scale;
+              // Unstick from the bottom edge: keep the finger on the cluster's
+              // BOTTOM so the (now tall) vertical stack expands *upward*, above
+              // the pointer, instead of the finger holding the top and the box
+              // dropping down out of reach. Rebase the drag anchor to the finger
+              // and place the top a full box-height above it. (Top-edge unstick
+              // already reads right — the finger naturally holds the top there.)
+              if (wasBottom) {
+                state.startX = e.clientX;
+                state.startY = e.clientY;
+                state.startLeft = state.left;
+                state.startTop = e.clientY - h;
+                desiredL = state.startLeft;
+                desiredT = state.startTop;
+              }
               pL = clamp(desiredL, 0, Math.max(0, window.innerWidth - w));
             }
           }
@@ -625,7 +666,25 @@
           // otherwise it's a select (ding). A long-press tags the event with an
           // explicit on/off status; a short tap selects bare and finishes with
           // "finish".
-          if (btn === state.selected) {
+          const host = submenuHosts.get(btn);
+          if (host) {
+            const isSel = btn.classList.contains('selected');
+            if (isSel && wasLongPress && !host.submenu) {
+              // Long-press on an already-selected host with no submenu yet:
+              // don't deselect — (re)report "on" and pop the submenu open.
+              selectButton(state, btn, 'on');
+              openSubmenu(host);
+            } else if (isSel) {
+              // Short tap, or a long-press while the submenu is open: deselect
+              // the host and tear the submenu down.
+              unselectButton(state, btn, wasLongPress ? 'off' : 'finish');
+              closeSubmenu(host);
+            } else {
+              // Selecting the host: a long-press also pops the submenu open.
+              selectButton(state, btn, wasLongPress ? 'on' : undefined);
+              if (wasLongPress) openSubmenu(host);
+            }
+          } else if (btn.classList.contains('selected')) {
             unselectButton(state, btn, wasLongPress ? 'off' : 'finish');
           } else {
             selectButton(state, btn, wasLongPress ? 'on' : undefined);
@@ -658,8 +717,9 @@
   );
   const cluster2 = createCluster(
     'actions',
-    ['Injection', 'Withdrawal', 'Hemostasis', 'Biopsy', 'Polyp'],
+    ['Withdrawal', 'Injection', 'Hemostasis', 'Biopsy', 'Polyp'],
     40, 100,
+    false, // actions are independent: selecting one doesn't clear the others
   );
   // Place the second cluster toward the right edge, clear of the first so the
   // two don't start out overlapping — but only on a fresh start (no saved layout
@@ -672,6 +732,98 @@
     clampIntoCanvas(cluster2);
     apply(cluster2);
     markHome(cluster2);
+  }
+
+  // --- Modifier submenus ---------------------------------------------------
+  // A host button in cluster 2 can pop open an exclusive submenu of modifiers on
+  // long-press. Its buttons inject {marker:<host>, modifier:<label>, status?}
+  // rather than their own label as the marker. Each submenu is transient:
+  // created on open, and destroyed (its selection discarded) as soon as the host
+  // is deselected. It reuses createCluster, so it drags/pinches and calls
+  // reportInteractive() like any other cluster.
+  const POLYP_MODIFIERS =
+    ['Forceps', 'Cold Snare', 'Hot Snare', 'EMR', 'ESD', 'EFTR', 'APC/Ablation', 'Surgical'];
+  const HEMOSTASIS_MODIFIERS =
+    ['Hemoclip', 'Thermal', 'APC', 'Injection', 'Band', 'Topical', 'Surgical'];
+  const BIOPSY_MODIFIERS =
+    ['Forceps', 'FNA/FNB', 'Brush', 'Snare', 'Suction'];
+  const INJECTION_MODIFIERS =
+    ['Lift', 'Hemostasis', 'Botox', 'Steroid', 'Tattoo', 'Contrast'];
+
+  // Register each host: button element -> config carrying its live submenu (or
+  // null when closed). Labels match the createCluster call above.
+  const cluster2Buttons = [...cluster2.el.querySelectorAll('button')];
+  const submenuHosts = new Map();
+  function registerSubmenu(label, id, modifiers) {
+    const btn = cluster2Buttons.find((b) => b.textContent.trim() === label);
+    if (btn) submenuHosts.set(btn, { marker: label, id, modifiers, submenu: null });
+  }
+  registerSubmenu('Polyp', 'polyp-modifier', POLYP_MODIFIERS);
+  registerSubmenu('Hemostasis', 'hemostasis-modifier', HEMOSTASIS_MODIFIERS);
+  registerSubmenu('Biopsy', 'biopsy-modifier', BIOPSY_MODIFIERS);
+  registerSubmenu('Injection', 'injection-modifier', INJECTION_MODIFIERS);
+
+  // Position a freshly opened submenu in open space that doesn't overlap any
+  // other cluster: preferring beside its host (right, then left, then below /
+  // above), then scanning the whole canvas for any clear slot, and finally —
+  // only if nothing is clear — sitting beside the host anyway.
+  function placeSubmenuInOpenSpace(sub, host) {
+    const gap = 16;
+    const w = sub.el.offsetWidth * sub.scale;
+    const h = sub.el.offsetHeight * sub.scale;
+    const hostW = host.el.offsetWidth * host.scale;
+    const hostH = host.el.offsetHeight * host.scale;
+    const maxL = Math.max(0, window.innerWidth - w);
+    const maxT = Math.max(0, window.innerHeight - h);
+    const fits = (l, t) => !hitsOtherCluster(sub, { l, t, r: l + w, b: t + h });
+    const place = (l, t) => { sub.left = clamp(l, 0, maxL); sub.top = clamp(t, 0, maxT); };
+
+    // Preferred anchors beside/around the host.
+    const anchors = [
+      [host.left + hostW + gap, host.top],   // right
+      [host.left - w - gap, host.top],       // left
+      [host.left, host.top + hostH + gap],   // below
+      [host.left, host.top - h - gap],       // above
+    ];
+    for (const [l, t] of anchors) {
+      const cl = clamp(l, 0, maxL), ct = clamp(t, 0, maxT);
+      if (fits(cl, ct)) { place(cl, ct); return; }
+    }
+    // Grid scan for any open slot anywhere on the canvas.
+    for (let t = 0; t <= maxT; t += 24) {
+      for (let l = 0; l <= maxL; l += 24) {
+        if (fits(l, t)) { place(l, t); return; }
+      }
+    }
+    // Nothing clear — sit beside the host (right if it fits, else left).
+    let l = host.left + hostW + gap;
+    if (l + w > window.innerWidth) l = host.left - w - gap;
+    place(l, host.top);
+  }
+
+  function openSubmenu(host) {
+    if (host.submenu) return; // already open
+    const sub = createCluster(host.id, host.modifiers, 0, 0, true, true);
+    sub.markerOverride = host.marker;
+    host.submenu = sub;
+    // Reopen at the saved spot when we have one and it's still clear; otherwise
+    // find open space beside the host. Persist the chosen spot either way so it
+    // is remembered next time.
+    if (!restoreLayout(sub) || hitsOtherCluster(sub, clusterRect(sub))) {
+      placeSubmenuInOpenSpace(sub, cluster2);
+      clampIntoCanvas(sub);
+      apply(sub);
+      markHome(sub);
+    }
+    saveLayout();
+  }
+
+  function closeSubmenu(host) {
+    if (!host.submenu) return;
+    const i = clusters.indexOf(host.submenu);
+    if (i !== -1) clusters.splice(i, 1);
+    host.submenu.el.remove();
+    host.submenu = null;
   }
 
   // Re-derive a cluster's on-screen position from its intended "home", clamped
