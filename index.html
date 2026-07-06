@@ -573,7 +573,13 @@
     let dA = angleBetween(p0, p1) - state.pinchStartAngle;
     dA = Math.atan2(Math.sin(dA), Math.cos(dA)); // wrap to [-PI, PI]
     if (Math.abs(dA) < TWIST_FLIP_RAD) return;
+    const m = midpoint(p0, p1);
     setOrientation(state, !state.horizontal);
+    // The box anchors at its top-left, and the flip swaps its width/height, so
+    // holding the corner fixed would fling the cluster's center out from under
+    // the fingers. Re-center the freshly reflowed box on the fingers' midpoint.
+    state.left = m.x - (state.el.offsetWidth * state.scale) / 2;
+    state.top = m.y - (state.el.offsetHeight * state.scale) / 2;
     clampIntoCanvas(state);
     apply(state);
     markHome(state);
