@@ -960,8 +960,8 @@
     // a horizontal "line of squares" near the top; drag/pinch/dock/persist reuse
     // the shared cluster machinery. Kept in `aiCluster` so the SSE stream can push
     // live scores into it.
-    if (config.ai && (config.ai.classes || []).length) {
-      const ai = config.ai;
+    if (config.aiScope && (config.aiScope.classes || []).length) {
+      const ai = config.aiScope;
       aiCluster = createReadoutCluster(
         ai.id || 'ai_classes', ai.classes,
         typeof ai.left === 'number' ? ai.left : 40,
@@ -975,6 +975,9 @@
         apply(aiCluster);
         markHome(aiCluster);
       }
+      // Start hidden — it appears only while inference data is flowing. Hide
+      // AFTER placement above so those steps can still measure the box.
+      setAiVisible(false);
     }
   }
 
@@ -1119,6 +1122,24 @@
   // Each packet's `det` array carries per-class detections ({cls, scr}); we push
   // each score into its class indicator as a 0..100%. EventSource auto-reconnects
   // if the connection drops.
+
+  // The cluster is only shown while inference data is flowing. Each packet marks
+  // activity: reveal the cluster and (re)arm a timer that hides it again once the
+  // stream has been silent for AI_IDLE_HIDE_MS. display:none also drops it from
+  // the no-overlap checks while hidden, which is what we want.
+  const AI_IDLE_HIDE_MS = 2000;
+  let aiIdleTimer = null;
+
+  function setAiVisible(visible) {
+    if (aiCluster) aiCluster.el.style.display = visible ? '' : 'none';
+  }
+
+  function noteAiActivity() {
+    setAiVisible(true);
+    if (aiIdleTimer) clearTimeout(aiIdleTimer);
+    aiIdleTimer = setTimeout(() => setAiVisible(false), AI_IDLE_HIDE_MS);
+  }
+
   function updateAiIndicators(payload) {
     if (!aiCluster) return;
     const byCls = new Map();
@@ -1130,6 +1151,7 @@
         ind.pctEl.textContent = `${Math.round(clamp(scr, 0, 1) * 100)}%`;
       }
     }
+    noteAiActivity(); // data arrived — show the cluster and reset the idle timer
   }
 
   function startAiStream() {
