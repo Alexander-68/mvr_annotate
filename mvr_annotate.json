@@ -19,6 +19,7 @@
   },
   "aiScope": {
     "id": "ai_classes",
+    "movingAverage": 12,
     "classes": [
       { "cls": 0, "label": "Blur", "color": "#ff69b4" },
       { "cls": 1, "label": "PooP", "color": "#8a5a2b" }

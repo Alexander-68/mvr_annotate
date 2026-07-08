@@ -478,7 +478,8 @@
       cell.appendChild(label);
       cell.appendChild(pct);
       el.appendChild(cell);
-      indicators.push({ cls: it.cls, el: cell, pctEl: pct, disp: null });
+      // buf/sum: ring buffer of the last N raw percents for the moving average.
+      indicators.push({ cls: it.cls, el: cell, pctEl: pct, disp: null, buf: [], sum: 0 });
     }
     const state = initCluster(id, el, left, top, false, false);
     state.indicators = indicators;
@@ -967,6 +968,10 @@
         typeof ai.left === 'number' ? ai.left : 40,
         typeof ai.top === 'number' ? ai.top : 20,
       );
+      // Moving-average window (packets) for the displayed percent. Raw scores are
+      // averaged over the last N packets in float; clamp to >=1 (1 == no smoothing).
+      aiCluster.maSize = Math.max(1, Math.round(
+        typeof ai.movingAverage === 'number' ? ai.movingAverage : 12));
       // Default fresh-start orientation: a line of squares. A saved layout (or a
       // later twist/dock) overrides this; only apply it when nothing was restored.
       if (!aiCluster.restored) {
@@ -1155,7 +1160,13 @@
       const scr = byCls.get(ind.cls);
       // Only classes present in this packet update; others keep their last value.
       if (typeof scr !== 'number') continue;
-      const v = clamp(scr, 0, 1) * 100;
+      const raw = clamp(scr, 0, 1) * 100;
+      // Moving average over the last maSize raw percents (float). Push newest,
+      // evict oldest once the window is full; keep a running sum to average in O(1).
+      ind.buf.push(raw);
+      ind.sum += raw;
+      if (ind.buf.length > aiCluster.maSize) ind.sum -= ind.buf.shift();
+      const v = ind.sum / ind.buf.length;
       // Repaint only when the value leaves the dead band around the shown integer.
       if (ind.disp === null || Math.abs(v - ind.disp) >= AI_PCT_HYSTERESIS) {
         ind.disp = Math.round(v);
