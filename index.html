@@ -132,12 +132,38 @@
     transform: scale(1);
     text-shadow: 0 0 1px #ffdd00, 0 1px 3px rgba(0, 0, 0, 0.9);
   }
+
+  /* Raw dump of the vision-AI inference JSON streamed over SSE (/ai/events).
+     A read-only, non-interactive panel pinned to a corner over the camera
+     preview — first visualization step: just show the incoming JSON string. */
+  #ai-raw {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    max-width: 40vw;
+    max-height: 40vh;
+    overflow: auto;
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #9effa0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+    pointer-events: none; /* purely informational — never steals a gesture */
+    z-index: 10;
+  }
 </style>
 </head>
 <body>
 <div id="stage">
   <canvas id="canvas"></canvas>
 </div>
+<pre id="ai-raw">Waiting for AI inference stream…</pre>
 
 <script>
   const canvas = document.getElementById('canvas');
@@ -988,8 +1014,38 @@
     for (const c of clusters) apply(c);
   });
 
-  // Kick off: load the config, then build the menus.
+  // --- Vision-AI inference stream ------------------------------------------
+  // The server pushes each UDP inference packet (one JSON string) down an SSE
+  // connection as it arrives: C process -UDP-> AiVisionUdpBridge -SSE-> here.
+  // First visualization step: just show the raw JSON string in the #ai-raw
+  // panel. EventSource auto-reconnects if the connection drops.
+  function startAiStream() {
+    const panel = document.getElementById('ai-raw');
+    if (!window.EventSource) {
+      panel.textContent = 'AI stream unavailable (no EventSource support)';
+      return;
+    }
+    const es = new EventSource('/ai/events');
+    es.onmessage = (e) => {
+      // e.data is one raw inference JSON string. Show it as-is for now; if it
+      // parses, pretty-print it for readability, otherwise dump it verbatim.
+      let text = e.data;
+      try {
+        text = JSON.stringify(JSON.parse(e.data), null, 2);
+      } catch (_) {
+        // Not valid JSON — display the raw payload unchanged.
+      }
+      panel.textContent = text;
+    };
+    es.onerror = () => {
+      // The browser reconnects automatically; note the drop meanwhile.
+      panel.textContent = 'AI stream disconnected — reconnecting…';
+    };
+  }
+
+  // Kick off: load the config and build the menus, then open the AI stream.
   init();
+  startAiStream();
 </script>
 </body>
 </html>
