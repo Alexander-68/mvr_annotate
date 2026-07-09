@@ -245,10 +245,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    min-width: 180px;
-    min-height: 82px;
-    padding: 13px 16px 17px;
+    width: 340px;
+    min-height: 92px;
+    padding: 12px 10px 0;
     border: 2px solid rgba(255, 255, 255, 0.95);
     border-radius: 10px;
     color: #fff;
@@ -259,6 +258,7 @@
     text-align: center;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    transform-origin: top left;
     cursor: grab;
     overflow: hidden;
     touch-action: none;
@@ -281,17 +281,21 @@
     width: 100%;
     min-height: 0;
     flex: 1 1 auto;
-    overflow: auto;
+    padding-bottom: 10px;
+    overflow: hidden;
     overflow-wrap: anywhere;
     white-space: normal;
   }
 
   .recording-warning-dismiss {
     flex: 0 0 auto;
-    padding: 5px 12px;
-    border: 2px solid rgba(255, 255, 255, 0.92);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.22);
+    width: calc(100% + 20px);
+    margin: 0 -10px;
+    padding: 8px 12px 9px;
+    border: 0;
+    border-top: 2px solid rgba(255, 255, 255, 0.92);
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.16);
     color: #fff;
     font: inherit;
     font-size: 15px;
@@ -299,34 +303,6 @@
     text-shadow: inherit;
     cursor: pointer;
     touch-action: none;
-  }
-
-  .recording-warning-resize {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 30px;
-    height: 30px;
-    cursor: nwse-resize;
-    touch-action: none;
-  }
-
-  .recording-warning-resize::before,
-  .recording-warning-resize::after {
-    content: "";
-    position: absolute;
-    right: 6px;
-    bottom: 7px;
-    width: 14px;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.9);
-    transform: rotate(-45deg);
-    transform-origin: right bottom;
-  }
-
-  .recording-warning-resize::after {
-    right: 6px;
-    bottom: 13px;
-    width: 8px;
   }
 </style>
 </head>
@@ -580,8 +556,6 @@
   // is session-only so a fresh session can warn again.
   const RECORDING_WARNING_LAYOUT_KEY = 'mvr_recording_warning_v1';
   const RECORDING_WARNING_DISMISS_KEY = 'mvr_recording_warning_dismissed_v1';
-  const RECORDING_WARNING_MIN_WIDTH = 180;
-  const RECORDING_WARNING_MIN_HEIGHT = 82;
   let recordingWarning = null;
   let recordingWarningDismissedInMemory = false;
 
@@ -606,8 +580,7 @@
       localStorage.setItem(RECORDING_WARNING_LAYOUT_KEY, JSON.stringify({
         left: recordingWarning.left,
         top: recordingWarning.top,
-        width: recordingWarning.width,
-        height: recordingWarning.height,
+        scale: recordingWarning.scale,
       }));
     } catch (_) {
       // Storage is best-effort (private mode, quota); ignore failures.
@@ -651,22 +624,48 @@
   }
 
   function clampRecordingWarningLayout(state) {
-    const minW = Math.min(RECORDING_WARNING_MIN_WIDTH, window.innerWidth || RECORDING_WARNING_MIN_WIDTH);
-    const minH = Math.min(RECORDING_WARNING_MIN_HEIGHT, window.innerHeight || RECORDING_WARNING_MIN_HEIGHT);
-    state.width = clamp(state.width, minW, Math.max(minW, window.innerWidth));
-    state.height = clamp(state.height, minH, Math.max(minH, window.innerHeight));
-    state.left = clamp(state.left, 0, Math.max(0, window.innerWidth - state.width));
-    state.top = clamp(state.top, 0, Math.max(0, window.innerHeight - state.height));
+    const w = state.el.offsetWidth * state.scale;
+    const h = state.el.offsetHeight * state.scale;
+    state.left = clamp(state.left, 0, Math.max(0, window.innerWidth - w));
+    state.top = clamp(state.top, 0, Math.max(0, window.innerHeight - h));
+  }
+
+  function capRecordingWarningScale(state) {
+    const w0 = state.el.offsetWidth;
+    const h0 = state.el.offsetHeight;
+    if (!w0 || !h0) return;
+    const canvasMax = Math.min(window.innerWidth / w0, window.innerHeight / h0);
+    state.scale = clamp(state.scale, MIN_SCALE, Math.min(MAX_SCALE, canvasMax));
   }
 
   function applyRecordingWarningLayout(state) {
     state.el.style.left = `${state.left}px`;
     state.el.style.top = `${state.top}px`;
-    state.el.style.width = `${state.width}px`;
-    state.el.style.height = `${state.height}px`;
+    state.el.style.transform = `scale(${state.scale})`;
   }
 
-  function setupRecordingWarning(state, dismissBtn, resizeHandle) {
+  function applyRecordingWarningZoom(state, desiredScale, focalScreenX, focalScreenY, focalLocalX, focalLocalY) {
+    const w0 = state.el.offsetWidth;
+    const h0 = state.el.offsetHeight;
+    const canvasMax = Math.min(window.innerWidth / w0, window.innerHeight / h0);
+    const newScale = clamp(desiredScale, MIN_SCALE, Math.min(MAX_SCALE, canvasMax));
+    state.left = focalScreenX - newScale * focalLocalX;
+    state.top = focalScreenY - newScale * focalLocalY;
+    state.scale = newScale;
+    clampRecordingWarningLayout(state);
+    applyRecordingWarningLayout(state);
+  }
+
+  function rebaseRecordingWarningPinch(state) {
+    const [p0, p1] = [...state.pointers.values()];
+    const m = midpoint(p0, p1);
+    state.pinchStartDist = dist(p0, p1) || 1;
+    state.pinchStartScale = state.scale;
+    state.focalX = (m.x - state.left) / state.scale;
+    state.focalY = (m.y - state.top) / state.scale;
+  }
+
+  function setupRecordingWarning(state, dismissBtn) {
     const el = state.el;
 
     dismissBtn.addEventListener('pointerdown', (e) => {
@@ -683,43 +682,92 @@
     el.addEventListener('pointerdown', (e) => {
       window.MvrOverlay?.reportInteractive();
       if (dismissBtn.contains(e.target)) return;
-      state.mode = resizeHandle.contains(e.target) ? 'resize' : 'drag';
-      state.startX = e.clientX;
-      state.startY = e.clientY;
-      state.startLeft = state.left;
-      state.startTop = state.top;
-      state.startWidth = state.width;
-      state.startHeight = state.height;
-      el.classList.toggle('dragging', state.mode === 'drag');
       el.setPointerCapture(e.pointerId);
+      state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (state.pointers.size === 1) {
+        state.mode = null;
+        state.moved = false;
+        state.startX = e.clientX;
+        state.startY = e.clientY;
+        state.startLeft = state.left;
+        state.startTop = state.top;
+      } else if (state.pointers.size === 2) {
+        state.mode = 'pinch';
+        state.moved = true;
+        el.classList.remove('dragging');
+        rebaseRecordingWarningPinch(state);
+      }
       e.preventDefault();
     });
 
     el.addEventListener('pointermove', (e) => {
-      if (!state.mode) return;
-      const dx = e.clientX - state.startX;
-      const dy = e.clientY - state.startY;
-      if (state.mode === 'drag') {
-        state.left = state.startLeft + dx;
-        state.top = state.startTop + dy;
-      } else {
-        state.width = state.startWidth + dx;
-        state.height = state.startHeight + dy;
+      const p = state.pointers.get(e.pointerId);
+      if (!p) return;
+      p.x = e.clientX;
+      p.y = e.clientY;
+
+      if (state.mode === 'pinch' && state.pointers.size >= 2) {
+        const [p0, p1] = [...state.pointers.values()];
+        const m = midpoint(p0, p1);
+        const ratio = dist(p0, p1) / state.pinchStartDist;
+        applyRecordingWarningZoom(state, state.pinchStartScale * ratio, m.x, m.y, state.focalX, state.focalY);
+        return;
       }
-      clampRecordingWarningLayout(state);
-      applyRecordingWarningLayout(state);
+
+      if (state.pointers.size === 1) {
+        const dx = e.clientX - state.startX;
+        const dy = e.clientY - state.startY;
+        if (!state.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+          state.moved = true;
+          state.mode = 'drag';
+          el.classList.add('dragging');
+        }
+        if (state.mode === 'drag') {
+          state.left = state.startLeft + dx;
+          state.top = state.startTop + dy;
+          clampRecordingWarningLayout(state);
+          applyRecordingWarningLayout(state);
+        }
+      }
     });
 
     function finishPointer(e) {
-      if (!state.mode) return;
+      if (!state.pointers.has(e.pointerId)) return;
+      state.pointers.delete(e.pointerId);
       try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-      state.mode = null;
-      el.classList.remove('dragging');
-      saveRecordingWarningLayout();
+
+      if (state.pointers.size === 1 && state.mode === 'pinch') {
+        const pt = [...state.pointers.values()][0];
+        state.mode = 'drag';
+        state.moved = true;
+        state.startX = pt.x;
+        state.startY = pt.y;
+        state.startLeft = state.left;
+        state.startTop = state.top;
+        return;
+      }
+
+      if (state.pointers.size === 0) {
+        state.mode = null;
+        state.moved = false;
+        el.classList.remove('dragging');
+        saveRecordingWarningLayout();
+      }
     }
 
     el.addEventListener('pointerup', finishPointer);
     el.addEventListener('pointercancel', finishPointer);
+
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      window.MvrOverlay?.reportInteractive();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const localX = (e.clientX - state.left) / state.scale;
+      const localY = (e.clientY - state.top) / state.scale;
+      applyRecordingWarningZoom(state, state.scale * factor, e.clientX, e.clientY, localX, localY);
+      saveRecordingWarningLayout();
+    }, { passive: false });
   }
 
   function buildRecordingWarning(spec) {
@@ -741,34 +789,43 @@
     dismissBtn.textContent = 'Dismiss';
     el.appendChild(dismissBtn);
 
-    const resizeHandle = document.createElement('span');
-    resizeHandle.className = 'recording-warning-resize';
-    resizeHandle.setAttribute('aria-hidden', 'true');
-    el.appendChild(resizeHandle);
-
     stage.appendChild(el);
+    el.style.display = 'flex';
+    el.style.visibility = 'hidden';
 
     const saved = loadRecordingWarningLayout();
-    const width = typeof saved.width === 'number' ? saved.width : Math.min(340, Math.max(180, window.innerWidth - 32));
-    const height = typeof saved.height === 'number' ? saved.height : 132;
+    const savedScale = typeof saved.scale === 'number' ? saved.scale :
+      (typeof saved.width === 'number' && el.offsetWidth ? saved.width / el.offsetWidth : 1);
     const state = {
       el,
-      left: typeof saved.left === 'number' ? saved.left : (window.innerWidth - width) / 2,
-      top: typeof saved.top === 'number' ? saved.top : window.innerHeight - height - 32,
-      width,
-      height,
+      left: typeof saved.left === 'number' ? saved.left : 0,
+      top: typeof saved.top === 'number' ? saved.top : 0,
+      scale: savedScale,
       mode: null,
+      moved: false,
+      pointers: new Map(),
       startX: 0,
       startY: 0,
       startLeft: 0,
       startTop: 0,
-      startWidth: 0,
-      startHeight: 0,
+      pinchStartDist: 0,
+      pinchStartScale: 1,
+      focalX: 0,
+      focalY: 0,
     };
+    capRecordingWarningScale(state);
+    if (typeof saved.left !== 'number') {
+      state.left = (window.innerWidth - el.offsetWidth * state.scale) / 2;
+    }
+    if (typeof saved.top !== 'number') {
+      state.top = window.innerHeight - el.offsetHeight * state.scale - 32;
+    }
     recordingWarning = state;
     clampRecordingWarningLayout(state);
     applyRecordingWarningLayout(state);
-    setupRecordingWarning(state, dismissBtn, resizeHandle);
+    setupRecordingWarning(state, dismissBtn);
+    el.style.display = '';
+    el.style.visibility = '';
   }
 
   function showRecordingWarning() {
@@ -1620,6 +1677,7 @@
     }
     for (const c of clusters) apply(c);
     if (recordingWarning) {
+      capRecordingWarningScale(recordingWarning);
       clampRecordingWarningLayout(recordingWarning);
       applyRecordingWarningLayout(recordingWarning);
     }

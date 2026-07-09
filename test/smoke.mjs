@@ -149,6 +149,9 @@ if (clusters.length !== 3) fail(`expected 3 clusters at load, got ${clusters.len
     fail(`recording warning text mismatch: ${JSON.stringify(warningText)}`);
   }
   const warning = page.locator('.recording-warning');
+  const warningBg = await warning.evaluate((el) => getComputedStyle(el).backgroundColor);
+  if (warningBg === 'rgb(245, 158, 11)') ok('recording warning background is orange');
+  else fail(`recording warning background mismatch: ${warningBg}`);
   const warningBox = await warning.boundingBox();
   await page.mouse.move(warningBox.x + warningBox.width / 2, warningBox.y + 20);
   await page.mouse.down();
@@ -160,20 +163,18 @@ if (clusters.length !== 3) fail(`expected 3 clusters at load, got ${clusters.len
   } else {
     fail(`recording warning did not move: before=${JSON.stringify(warningBox)} after=${JSON.stringify(movedWarningBox)}`);
   }
-  await page.mouse.move(movedWarningBox.x + movedWarningBox.width - 5, movedWarningBox.y + movedWarningBox.height - 5);
-  await page.mouse.down();
-  await page.mouse.move(movedWarningBox.x + movedWarningBox.width + 31, movedWarningBox.y + movedWarningBox.height + 19);
-  await page.mouse.up();
+  await page.mouse.move(movedWarningBox.x + movedWarningBox.width / 2, movedWarningBox.y + movedWarningBox.height / 2);
+  await page.mouse.wheel(0, -420);
   const resizedWarningBox = await warning.boundingBox();
   if (resizedWarningBox.width > movedWarningBox.width + 20 && resizedWarningBox.height > movedWarningBox.height + 12) {
-    ok('recording warning can be resized');
+    ok('recording warning can be resized with mouse wheel scale');
   } else {
-    fail(`recording warning did not resize: before=${JSON.stringify(movedWarningBox)} after=${JSON.stringify(resizedWarningBox)}`);
+    fail(`recording warning did not scale: before=${JSON.stringify(movedWarningBox)} after=${JSON.stringify(resizedWarningBox)}`);
   }
   const savedWarningLayout = await page.evaluate(() => JSON.parse(localStorage.getItem('mvr_recording_warning_v1')));
-  if (savedWarningLayout?.width === Math.round(resizedWarningBox.width) ||
-      Math.abs(savedWarningLayout?.width - resizedWarningBox.width) < 1) {
-    ok('recording warning size/position persisted');
+  if (savedWarningLayout?.scale > 1 && typeof savedWarningLayout.left === 'number' &&
+      typeof savedWarningLayout.top === 'number') {
+    ok('recording warning position/scale persisted');
   } else {
     fail(`recording warning layout not persisted: ${JSON.stringify(savedWarningLayout)}`);
   }

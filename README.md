@@ -18,13 +18,14 @@ an annotation while the MVR bridge reports that recording is stopped:
 ```json
 "recordingWarning": {
   "text": "Recording is not active. Start recording on the MVR before adding timeline annotations.",
-  "backgroundColor": "#b91c1c"
+  "backgroundColor": "#f59e0b"
 }
 ```
 
 Omit this block, or leave either value empty, to disable the warning. The warning
-can be dragged and resized; its position and size are remembered locally. Tapping
-**Dismiss** hides it for the current browser session.
+can be dragged and resized with pinch-zoom or the mouse wheel; its position and
+scale are remembered locally. Tapping **Dismiss** hides it for the current
+browser session.
 
 ## Packaging
 
