@@ -34,6 +34,7 @@
   "aiScope": {
     "id": "ai_classes",
     "movingAverage": 12,
+    "graph": { "id": "ai_graph", "windowSeconds": 30, "width": 320, "height": 84, "threshold": 50, "maxSamples": 216000 },
     "classes": [
       { "cls": 0, "label": "Blur", "color": "#ff69b4" },
       { "cls": 1, "label": "PooP", "color": "#8a5a2b" }

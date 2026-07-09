@@ -238,6 +238,56 @@
     border-bottom-right-radius: 10px;
   }
 
+  /* aiScope history graph. One long strip styled exactly like a single cluster
+     button (transparent bg, 2px white border, 10px rounded corners); its inner
+     canvas plots each class's moving-averaged score over time, one color per
+     class. It reuses the full cluster machinery (drag / pinch-zoom / dock /
+     persist) via initCluster, so it resizes/repositions like a single-button
+     menu. Taps do nothing (there is no <button> inside). */
+  .cluster .graph {
+    position: relative;
+    width: 320px;
+    height: 84px;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    background: transparent;
+    overflow: hidden;
+    touch-action: none;
+    cursor: inherit;
+  }
+  .cluster .graph canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+
+  /* Grab strip on the graph's right edge: drag it to make the graph longer (and
+     thus show more history). A faint vertical grip marks it. */
+  .cluster .graph-resize {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    cursor: ew-resize;
+    touch-action: none;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.10));
+  }
+  .cluster .graph-resize::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    width: 2px;
+    height: 24px;
+    transform: translateY(-50%);
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.65);
+    box-shadow: -3px 0 0 rgba(255, 255, 255, 0.65); /* second tick to the left */
+  }
+
   .recording-warning {
     position: absolute;
     z-index: 20;
@@ -533,6 +583,9 @@
           left: c.left, top: c.top, scale: c.scale,
           horizontal: c.horizontal, dock: c.dock,
           ...(c.minimizable ? { minimized: c.minimized } : {}),
+          // A graph persists its width and timeline zoom (its "size"), but never
+          // its collected samples — the AI data is in-memory only.
+          ...(c.graph ? { graphW: c.graph.baseW, graphMsPerPx: c.graph.msPerPx } : {}),
         };
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(savedLayout));
@@ -956,11 +1009,228 @@
       cell.appendChild(pct);
       el.appendChild(cell);
       // buf/sum: ring buffer of the last N raw percents for the moving average.
-      indicators.push({ cls: it.cls, el: cell, pctEl: pct, disp: null, buf: [], sum: 0 });
+      // ma: the latest moving-averaged percent (null until the first packet),
+      // read by the history graph when it collects a time sample.
+      indicators.push({ cls: it.cls, el: cell, pctEl: pct, disp: null, ma: null, buf: [], sum: 0 });
     }
     const state = initCluster(id, el, left, top, false, false);
     state.indicators = indicators;
     return state;
+  }
+
+  // --- History graph -------------------------------------------------------
+  // A graph is a long strip styled like a single cluster button; its inner canvas
+  // plots each class's moving-averaged score over time, one color per class. It
+  // reuses the cluster machinery (drag to move / dock / persist) via initCluster,
+  // but overrides zoom: instead of uniformly scaling the box, a two-finger pinch
+  // or the mouse wheel ZOOMS THE TIMELINE (how much history the window shows), and
+  // a right-edge handle changes the strip's WIDTH. Width and time-zoom are two
+  // independent levers on the same axis: the graph maps `msPerPx` ms of history
+  // onto every horizontal pixel, so the visible window = plotWidth * msPerPx.
+  // Widening the strip therefore shows proportionally MORE samples; the pinch/
+  // wheel timeline-zoom changes msPerPx to compress/expand history at a fixed
+  // width. Content is not a <button>, so taps are inert (like the readout squares).
+  const MIN_GRAPH_W = 120;              // narrowest the strip can be dragged
+  const GRAPH_MIN_MS_PER_PX = 5;        // most zoomed-in timeline (dense = little history)
+  const GRAPH_MAX_MS_PER_PX = 5000;     // most zoomed-out timeline (lots of history)
+  const GRAPH_MAX_SAMPLES_DEFAULT = 216000; // in-memory sample cap default; override via
+                                            // aiScope.graph.maxSamples (NOT persisted; see saveLayout)
+
+  function createGraphCluster(id, classes, left, top, opts) {
+    const saved = savedLayout[id] || {};
+    const el = document.createElement('div');
+    el.className = 'cluster';
+    const box = document.createElement('div');
+    box.className = 'graph';
+    const baseW = typeof saved.graphW === 'number' ? saved.graphW : opts.width;
+    box.style.width = `${baseW}px`;
+    box.style.height = `${opts.height}px`;
+    const cvs = document.createElement('canvas');
+    box.appendChild(cvs);
+    const resizeHandle = document.createElement('div');
+    resizeHandle.className = 'graph-resize';
+    box.appendChild(resizeHandle);
+    el.appendChild(box);
+
+    const state = initCluster(id, el, left, top, false, false);
+    state.graph = {
+      canvas: cvs,
+      ctx: cvs.getContext('2d'),
+      classes: classes.map((c) => ({ cls: c.cls, color: c.color })),
+      samples: [],           // [{ t, v: [pct|null, ...] }] newest last; v aligned to classes.
+                             // In-memory only — never persisted (only layout is saved).
+      maxSamples: opts.maxSamples, // in-memory retention cap (config: aiScope.graph.maxSamples)
+      baseW,                 // strip width in CSS px (drag the right edge to change)
+      cw: baseW, ch: opts.height, // measured canvas CSS size (set by sizeGraphCanvas)
+      msPerPx: 1,            // ms of history per horizontal pixel (timeline zoom); set below
+      threshold: opts.threshold,        // horizontal reference line at this percent, or null
+      thresholdColor: opts.thresholdColor,
+      pinchStartMsPerPx: 1, // baseline captured when a two-finger timeline-zoom begins
+      resizing: null,       // { startX, startW } while the right-edge handle is dragged
+    };
+    sizeGraphCanvas(state); // measures cw/ch from the mounted box
+    // Initial timeline density: fit `windowSeconds` of history across the plot.
+    // A saved zoom (msPerPx) overrides it so a restored graph keeps its time scale.
+    state.graph.msPerPx = typeof saved.graphMsPerPx === 'number'
+      ? clamp(saved.graphMsPerPx, GRAPH_MIN_MS_PER_PX, GRAPH_MAX_MS_PER_PX)
+      : clamp((opts.windowSeconds * 1000) / Math.max(1, state.graph.cw), GRAPH_MIN_MS_PER_PX, GRAPH_MAX_MS_PER_PX);
+    clampIntoCanvas(state);
+    apply(state);
+    markHome(state);
+    setupGraphResize(state, resizeHandle);
+    drawGraph(state);
+    return state;
+  }
+
+  // Match the graph canvas's backing store to its on-screen size at the device
+  // pixel ratio, so lines stay crisp when the strip is widened.
+  function sizeGraphCanvas(state) {
+    const g = state.graph;
+    const dpr = window.devicePixelRatio || 1;
+    g.cw = g.canvas.clientWidth || g.cw;
+    g.ch = g.canvas.clientHeight || g.ch;
+    g.canvas.width = Math.round(g.cw * dpr);
+    g.canvas.height = Math.round(g.ch * dpr);
+    g.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawGraph(state);
+  }
+
+  // The currently visible time span: plot width (px) × time density (ms/px).
+  function graphWindowMs(g) {
+    return Math.max(1, g.cw) * g.msPerPx;
+  }
+
+  // Redraw the graph from its samples: X = time across the last windowMs (newest
+  // sample pinned to the right edge), Y = 0..100% bottom-to-top, one polyline per
+  // class in its own color, plus an optional dashed threshold line. null values (a
+  // class absent from a packet before it ever reported) break the line into
+  // segments. Samples older than the window are kept in memory (so a wider strip
+  // or a zoomed-out timeline reveals more real history) but skipped when drawing.
+  function drawGraph(state) {
+    const g = state.graph;
+    const ctx = g.ctx;
+    const W = g.cw, H = g.ch;
+    ctx.clearRect(0, 0, W, H);
+
+    const pad = 5;
+    const x0 = pad, x1 = W - pad, y0 = pad, y1 = H - pad;
+    const yOf = (v) => y1 - (y1 - y0) * (clamp(v, 0, 100) / 100);
+
+    // Threshold reference line (drawn under the class curves).
+    if (g.threshold != null) {
+      ctx.save();
+      ctx.strokeStyle = g.thresholdColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      const y = yOf(g.threshold);
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const samples = g.samples;
+    if (samples.length < 2) return;
+    const windowMs = graphWindowMs(g);
+    const tNew = samples[samples.length - 1].t;
+    const tOld = tNew - windowMs;
+    const xOf = (t) => clamp(x1 - (x1 - x0) * (tNew - t) / windowMs, x0, x1);
+
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    g.classes.forEach((c, ci) => {
+      ctx.strokeStyle = c.color;
+      ctx.beginPath();
+      let pen = false;
+      for (const s of samples) {
+        if (s.t < tOld) continue; // out of the visible window (still retained)
+        const v = s.v[ci];
+        if (v == null) { pen = false; continue; }
+        const x = xOf(s.t), y = yOf(v);
+        if (pen) ctx.lineTo(x, y);
+        else { ctx.moveTo(x, y); pen = true; }
+      }
+      ctx.stroke();
+    });
+  }
+
+  // Append one time sample (the current moving average of every class). Samples
+  // are retained up to g.maxSamples (dropping only the very oldest) — not trimmed
+  // to the visible window — so widening the strip or zooming the timeline out
+  // reveals history that was collected but not previously shown. Then repaint.
+  function pushGraphSample(state, indicators, t) {
+    const g = state.graph;
+    g.samples.push({ t, v: indicators.map((ind) => (ind.ma == null ? null : ind.ma)) });
+    if (g.samples.length > g.maxSamples) {
+      g.samples.splice(0, g.samples.length - g.maxSamples);
+    }
+    drawGraph(state);
+  }
+
+  // Widest the strip may grow: capped by the canvas right edge and by the nearest
+  // cluster to the right that vertically overlaps it (so widening never overlaps).
+  function graphMaxBaseW(state) {
+    const scale = state.scale;
+    const h = state.el.offsetHeight * scale;
+    const myTop = state.top, myBottom = state.top + h;
+    let limitRight = window.innerWidth;
+    for (const o of clusters) {
+      if (o === state) continue;
+      const r = clusterRect(o);
+      if (r.b <= myTop || r.t >= myBottom) continue; // no vertical overlap
+      if (r.l >= state.left) limitRight = Math.min(limitRight, r.l);
+    }
+    return Math.max(MIN_GRAPH_W, (limitRight - state.left) / scale);
+  }
+
+  // Apply a new strip width: resize the box, re-measure the canvas, redraw. The
+  // top-left stays pinned (the strip grows/shrinks rightward). Because the visible
+  // window = width × msPerPx, a wider strip shows proportionally more history.
+  function setGraphWidth(state, w) {
+    const g = state.graph;
+    g.baseW = clamp(w, MIN_GRAPH_W, graphMaxBaseW(state));
+    state.el.querySelector('.graph').style.width = `${g.baseW}px`;
+    sizeGraphCanvas(state);
+    apply(state);
+  }
+
+  // Zoom the timeline by scaling msPerPx (how much history each pixel carries),
+  // keeping the newest sample pinned to the right edge. factor < 1 zooms in (less
+  // history, more detail); factor > 1 zooms out (more history).
+  function applyTimelineZoom(state, factor) {
+    const g = state.graph;
+    g.msPerPx = clamp(g.msPerPx * factor, GRAPH_MIN_MS_PER_PX, GRAPH_MAX_MS_PER_PX);
+    drawGraph(state);
+  }
+
+  // Right-edge resize handle: its own pointer gesture (stops propagation so the
+  // cluster doesn't also treat it as a move), captured so the drag tracks even
+  // past the handle. Persists the new width on release.
+  function setupGraphResize(state, handle) {
+    const g = state.graph;
+    handle.addEventListener('pointerdown', (e) => {
+      window.MvrOverlay?.reportInteractive();
+      e.stopPropagation();
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      g.resizing = { startX: e.clientX, startW: g.baseW };
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!g.resizing) return;
+      const dx = (e.clientX - g.resizing.startX) / state.scale;
+      setGraphWidth(state, g.resizing.startW + dx);
+    });
+    function end(e) {
+      if (!g.resizing) return;
+      g.resizing = null;
+      try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+      markHome(state);
+      saveLayout();
+    }
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
   }
 
   // Shared cluster bootstrap: mount the element, build its gesture state, wire up
@@ -1166,6 +1436,8 @@
     // only a deliberate twist changes it.
     state.dock = null;
     rebasePinch(state);
+    // Baseline for a graph's timeline pinch-zoom (msPerPx changes off this).
+    if (state.graph) state.graph.pinchStartMsPerPx = state.graph.msPerPx;
   }
 
   // A two-finger twist past TWIST_FLIP_RAD flips orientation (row <-> column).
@@ -1233,6 +1505,15 @@
       if (state.mode === 'pinch' && state.pointers.size >= 2) {
         const [p0, p1] = [...state.pointers.values()];
         const m = midpoint(p0, p1);
+        // A graph pinches its TIMELINE, not its box: spreading the fingers zooms
+        // in (less history, more detail), pinching zooms out (more history).
+        if (state.graph) {
+          const ratio = dist(p0, p1) / state.pinchStartDist;
+          state.graph.msPerPx = clamp(
+            state.graph.pinchStartMsPerPx / ratio, GRAPH_MIN_MS_PER_PX, GRAPH_MAX_MS_PER_PX);
+          drawGraph(state);
+          return;
+        }
         // Twist flips orientation (and re-bases the pinch); spread zooms; the
         // midpoint translates. All three can happen in one two-finger gesture.
         twistDuringPinch(state);
@@ -1395,10 +1676,16 @@
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
 
-    // Mouse-wheel zoom, focused on the cursor position.
+    // Mouse-wheel zoom, focused on the cursor position — except a graph zooms its
+    // timeline (scroll up = zoom in / less history, down = zoom out / more).
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       window.MvrOverlay?.reportInteractive();
+      if (state.graph) {
+        applyTimelineZoom(state, Math.exp(e.deltaY * 0.0015));
+        saveLayout();
+        return;
+      }
       const factor = Math.exp(-e.deltaY * 0.0015);
       const localX = (e.clientX - state.left) / state.scale;
       const localY = (e.clientY - state.top) / state.scale;
@@ -1529,14 +1816,49 @@
         apply(aiCluster);
         markHome(aiCluster);
       }
-      // Start hidden — it appears only while inference data is flowing. Hide
-      // AFTER placement above so those steps can still measure the box.
+      // Optional history graph: a long button-styled strip that plots each
+      // class's moving-averaged score over time. Enabled by an `aiScope.graph`
+      // object (or `true` for defaults); shares the class list/order with the
+      // squares so a sample's value columns line up with the graph classes.
+      if (ai.graph) {
+        const g = typeof ai.graph === 'object' ? ai.graph : {};
+        aiGraph = createGraphCluster(
+          g.id || 'ai_graph', ai.classes,
+          typeof g.left === 'number' ? g.left : (typeof ai.left === 'number' ? ai.left : 40),
+          typeof g.top === 'number' ? g.top : 120,
+          {
+            width: typeof g.width === 'number' ? g.width : 320,
+            height: typeof g.height === 'number' ? g.height : 84,
+            windowSeconds: typeof g.windowSeconds === 'number' ? g.windowSeconds : 30,
+            // In-memory sample retention cap (across the whole session, not just
+            // the visible window); dropping only the oldest beyond it.
+            maxSamples: typeof g.maxSamples === 'number' && g.maxSamples > 0
+              ? Math.round(g.maxSamples) : GRAPH_MAX_SAMPLES_DEFAULT,
+            // Threshold reference line: a percent to draw a dashed line at
+            // (default 50); null/false disables it. thresholdColor is optional.
+            threshold: (g.threshold === null || g.threshold === false) ? null
+              : (typeof g.threshold === 'number' ? g.threshold : 50),
+            thresholdColor: typeof g.thresholdColor === 'string'
+              ? g.thresholdColor : 'rgba(255, 255, 255, 0.4)',
+          },
+        );
+        if (!aiGraph.restored) {
+          clampIntoCanvas(aiGraph);
+          moveClusterToOpenSpace(aiGraph); // don't start on top of the squares
+          apply(aiGraph);
+          markHome(aiGraph);
+        }
+      }
+      // Start hidden — they appear only while inference data is flowing. Hide
+      // AFTER placement above so those steps can still measure the boxes.
       setAiVisible(false);
     }
   }
 
-  // The vision-AI indicator cluster, once built. The SSE stream updates it.
+  // The vision-AI indicator cluster and history graph, once built. The SSE
+  // stream updates both.
   let aiCluster = null;
+  let aiGraph = null;
 
   // Fail-loud banner shown when the config can't be loaded. The file is the sole
   // source of menu content, so on failure we say why rather than come up blank.
@@ -1699,6 +2021,7 @@
 
   function setAiVisible(visible) {
     if (aiCluster) aiCluster.el.style.display = visible ? '' : 'none';
+    if (aiGraph) aiGraph.el.style.display = visible ? '' : 'none';
   }
 
   function noteAiActivity() {
@@ -1729,13 +2052,17 @@
       ind.sum += raw;
       if (ind.buf.length > aiCluster.maSize) ind.sum -= ind.buf.shift();
       const v = ind.sum / ind.buf.length;
-      // Repaint only when the value leaves the dead band around the shown integer.
+      // Keep the raw moving average for the history graph, and repaint the shown
+      // integer only when it leaves the dead band around the current value.
+      ind.ma = v;
       if (ind.disp === null || Math.abs(v - ind.disp) >= AI_PCT_HYSTERESIS) {
         ind.disp = Math.round(v);
         ind.pctEl.textContent = `${ind.disp}%`;
       }
     }
-    noteAiActivity(); // data arrived — show the cluster and reset the idle timer
+    // Collect one time sample of every class's moving average for the graph.
+    if (aiGraph) pushGraphSample(aiGraph, aiCluster.indicators, performance.now());
+    noteAiActivity(); // data arrived — show the cluster/graph and reset idle timer
   }
 
   function startAiStream() {
