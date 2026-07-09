@@ -1040,12 +1040,11 @@
   // epoch-ms `ts`; graph samples are keyed on performance.now(). PERF_ORIGIN is
   // the epoch ms of that clock's zero, so `ts - PERF_ORIGIN` maps an event onto
   // the sample timebase (performance.timeOrigin + performance.now() ≈ Date.now()).
+  // The overlay colors themselves come from config (aiScope.graph.*Color); an
+  // unset color simply means that element is not drawn (see drawRecordingOverlay).
   const PERF_ORIGIN = (typeof performance.timeOrigin === 'number' && performance.timeOrigin)
     ? performance.timeOrigin
     : ((performance.timing && performance.timing.navigationStart) || 0);
-  const REC_SPAN_FILL = 'rgba(255, 64, 64, 0.16)';   // shaded while recording
-  const REC_EDGE_COLOR = 'rgba(255, 80, 80, 0.9)';   // start/stop edge lines
-  const SNAPSHOT_COLOR = 'rgba(120, 210, 255, 0.9)'; // snapshot tick lines
 
   function createGraphCluster(id, classes, left, top, opts) {
     const saved = savedLayout[id] || {};
@@ -1076,6 +1075,11 @@
       msPerPx: 1,            // ms of history per horizontal pixel (timeline zoom); set below
       threshold: opts.threshold,        // horizontal reference line at this percent, or null
       thresholdColor: opts.thresholdColor,
+      // Recording-event overlay colors (config aiScope.graph.*Color). Each is a
+      // CSS color string or null; a null color means that element isn't drawn.
+      recordingFillColor: opts.recordingFillColor, // shaded recording band
+      recordingEdgeColor: opts.recordingEdgeColor, // start/stop edge lines
+      snapshotColor: opts.snapshotColor,           // snapshot tick lines
       pinchStartMsPerPx: 1, // baseline captured when a two-finger timeline-zoom begins
       resizing: null,       // { startX, startW } while the right-edge handle is dragged
     };
@@ -1151,7 +1155,8 @@
     // Recording spans + snapshot ticks, painted under the class curves so the
     // data reads on top. Times come from each event's epoch `ts`, mapped onto the
     // sample timebase via PERF_ORIGIN; an ongoing recording extends to `tNew`.
-    drawRecordingOverlay(ctx, { x0, x1, y0, y1, xOf, tNew, tOld });
+    // Colors come from config — unset colors hide their element entirely.
+    drawRecordingOverlay(ctx, { x0, x1, y0, y1, xOf, tNew, tOld }, g);
 
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
@@ -1177,8 +1182,16 @@
   // ticks for snapshots. `ts` is epoch ms (event's own timebase); `m.xOf` maps a
   // sample-clock time to an X pixel, so we shift `ts` by PERF_ORIGIN first.
   // A recording still open at the end extends to the right edge (`m.tNew`).
-  function drawRecordingOverlay(ctx, m) {
+  //
+  // Colors are per-graph config (g.recordingFillColor / recordingEdgeColor /
+  // snapshotColor). An unset (null) color means that element is not drawn, so
+  // with none configured the events are simply not visualized.
+  function drawRecordingOverlay(ctx, m, g) {
     if (!recordingEvents.length) return;
+    const drawBand = !!g.recordingFillColor;
+    const drawEdges = !!g.recordingEdgeColor;
+    const drawSnaps = !!g.snapshotColor;
+    if (!drawBand && !drawEdges && !drawSnaps) return; // nothing to visualize
     const toPerf = (ts) => ts - PERF_ORIGIN;
     // Events may arrive slightly out of order across replay/reconnect — sort by
     // ts before folding. Only entries with a numeric ts can be placed.
@@ -1218,26 +1231,32 @@
       const x = xOf(p);
       ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
     };
-    // Shaded recording bands + start/stop edge lines.
-    for (const [start, end] of spans) {
-      const pStart = toPerf(start);
-      const pEnd = end === null ? tNew : toPerf(end);
-      const left = xOf(pStart);   // xOf clamps to [x0, x1]
-      const right = xOf(pEnd);
-      if (right <= left) continue; // span lies entirely outside the visible window
-      ctx.fillStyle = REC_SPAN_FILL;
-      ctx.fillRect(left, y0, right - left, y1 - y0);
-      ctx.strokeStyle = REC_EDGE_COLOR;
-      ctx.lineWidth = 1.5;
-      if (inWindow(pStart)) edgeLine(pStart);
-      if (end !== null && inWindow(pEnd)) edgeLine(pEnd);
+    // Shaded recording bands + start/stop edge lines (each gated on its color).
+    if (drawBand || drawEdges) {
+      for (const [start, end] of spans) {
+        const pStart = toPerf(start);
+        const pEnd = end === null ? tNew : toPerf(end);
+        const left = xOf(pStart);   // xOf clamps to [x0, x1]
+        const right = xOf(pEnd);
+        if (right <= left) continue; // span lies entirely outside the visible window
+        if (drawBand) {
+          ctx.fillStyle = g.recordingFillColor;
+          ctx.fillRect(left, y0, right - left, y1 - y0);
+        }
+        if (drawEdges) {
+          ctx.strokeStyle = g.recordingEdgeColor;
+          ctx.lineWidth = 1.5;
+          if (inWindow(pStart)) edgeLine(pStart);
+          if (end !== null && inWindow(pEnd)) edgeLine(pEnd);
+        }
+      }
     }
 
     // Snapshot ticks: short dashed verticals so they read distinctly from the
     // recording edges.
-    if (snaps.length) {
+    if (drawSnaps && snaps.length) {
       ctx.save();
-      ctx.strokeStyle = SNAPSHOT_COLOR;
+      ctx.strokeStyle = g.snapshotColor;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([3, 3]);
       for (const ts of snaps) {
@@ -1936,6 +1955,11 @@
               : (typeof g.threshold === 'number' ? g.threshold : 50),
             thresholdColor: typeof g.thresholdColor === 'string'
               ? g.thresholdColor : 'rgba(255, 255, 255, 0.4)',
+            // Recording-event overlay colors: only what's set in config is drawn.
+            // Omit a color to hide that element (band / edges / snapshot ticks).
+            recordingFillColor: typeof g.recordingFillColor === 'string' ? g.recordingFillColor : null,
+            recordingEdgeColor: typeof g.recordingEdgeColor === 'string' ? g.recordingEdgeColor : null,
+            snapshotColor: typeof g.snapshotColor === 'string' ? g.snapshotColor : null,
           },
         );
         if (!aiGraph.restored) {

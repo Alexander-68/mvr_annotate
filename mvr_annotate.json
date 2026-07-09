@@ -34,7 +34,8 @@
   "aiScope": {
     "id": "ai_classes",
     "movingAverage": 12,
-    "graph": { "id": "ai_graph", "windowSeconds": 30, "width": 320, "height": 84, "threshold": 50, "maxSamples": 216000 },
+    "graph": { "id": "ai_graph", "windowSeconds": 30, "width": 320, "height": 84, "threshold": 50, "maxSamples": 216000,
+      "recordingFillColor": "rgba(255, 64, 64, 0.16)", "recordingEdgeColor": "rgba(255, 80, 80, 0.9)", "snapshotColor": "rgba(120, 210, 255, 0.9)" },
     "classes": [
       { "cls": 0, "label": "Blur", "color": "#ff69b4" },
       { "cls": 1, "label": "PooP", "color": "#8a5a2b" }
