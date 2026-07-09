@@ -1372,6 +1372,9 @@
                             // its selection is discarded, but its position persists
       markerOverride: null, // submenu root marker; ordinary clusters leave null
       modifierPath: [],      // submenu ancestor labels already chosen
+      warnRecording: true,   // does an event from this cluster raise the
+                             // not-recording warning? Config `recordingWarning:
+                             // false` opts a cluster out; submenus inherit it.
       minimizable: !!el.querySelector('.cluster-min-toggle'),
       minimized: false,
       selected: null,       // last-selected button (only meaningful when exclusive)
@@ -1449,7 +1452,7 @@
       });
     }
     if (status) evt.status = status;
-    maybeShowRecordingWarning();
+    if (state.warnRecording) maybeShowRecordingWarning();
     window.MvrOverlay?.injectTimelineEvent(JSON.stringify(evt));
   }
 
@@ -1870,12 +1873,15 @@
 
     const built = [];
     for (const c of (config.clusters || [])) {
-      built.push(createCluster(
+      const cl = createCluster(
         c.id, c.buttons || [],
         typeof c.left === 'number' ? c.left : 40,
         typeof c.top === 'number' ? c.top : 100,
         c.exclusive !== false,
-      ));
+      );
+      // Opt a cluster out of the not-recording warning with recordingWarning:false.
+      cl.warnRecording = c.recordingWarning !== false;
+      built.push(cl);
     }
 
     // Fresh-start placement: keep the first cluster at its default spot and push
@@ -2054,6 +2060,7 @@
     const sub = createCluster(host.id, host.modifiers, 0, 0, true, true, host.title);
     sub.markerOverride = host.marker;
     sub.modifierPath = [...host.modifierPath];
+    sub.warnRecording = host.cluster.warnRecording; // inherit opt-out from host
     host.submenu = sub;
     registerSubmenuHostsForCluster(sub);
     // Reopen at the saved spot when we have one and it's still clear; otherwise

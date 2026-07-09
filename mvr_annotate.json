@@ -7,7 +7,8 @@
     {
       "id": "Data",
       "exclusive": true,
-      "buttons": ["Visit", "Current Disease", "Open Forceps Size (mm)"]
+      "recordingWarning": false,
+      "buttons": ["Trial Timeframe", "Current Disease", "Camera model", "Open Forceps Size (mm)"]
     },
     {
       "id": "Segments",
@@ -27,7 +28,8 @@
     "Polyp":      { "openOnTap": false, "modifiers": ["Forceps", "Cold Snare", "Hot Snare", "EMR", "ESD", "EFTR", "APC/Ablation", "Part.Resected", "Fully Resected", "Surgical"] },
     "Status":     { "openOnTap": true, "modifiers": ["Normal", "Inaccessible", "Not Explored", "Disease", "Hemorrhoids", "Cancer/Tumor"] },
     "Disease":    { "openOnTap": true, "modifiers": ["Ulcer.Colitis", "Infect.Colitis", "Ischem.Colitis", "Crohn's", "Diverticulosis", "Diverticulitis"] },
-    "Visit":      { "openOnTap": true, "modifiers": ["Beginning", "10th week", "20th week", "30th week", "40th week", "52th week" ] },
+    "Trial Timeframe": { "openOnTap": true, "modifiers": ["Beginning", "10th week", "20th week", "30th week", "40th week", "52th week" ] },
+    "Camera model": { "openOnTap": true, "modifiers": ["CF-Q180AL", "CF-H180DL", "EC-3890Zi", "EC-380LKP", "EC-530WL", "Other" ] },
     "Open Forceps Size (mm)": { "openOnTap": true, "modifiers": ["4", "5", "6", "7", "8", "9", "10" ] },
     "Current Disease": { "openOnTap": true, "modifiers": ["Ulcer.Colitis", "Crohn's" ] }
   },

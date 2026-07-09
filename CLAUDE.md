@@ -64,6 +64,8 @@ Shape:
     // exclusive omitted/true => single-select; false => independent multi-select.
     // optional "left"/"top" override the default spawn spot (else 40,100 for the
     // first cluster; later clusters auto-place toward the right edge, clear of it).
+    // "recordingWarning": false opts the cluster (and its submenus) out of the
+    // not-recording warning; omitted/true keeps it (the default).
     { "id": "segments", "exclusive": true,  "buttons": ["Illeum", "R.Colon", ...] },
     { "id": "actions",  "exclusive": false, "buttons": ["Withdrawal", "Injection", ...] }
   ],
