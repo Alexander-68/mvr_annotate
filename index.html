@@ -1070,6 +1070,9 @@
       samples: [],           // [{ t, v: [pct|null, ...] }] newest last; v aligned to classes.
                              // In-memory only — never persisted (only layout is saved).
       maxSamples: opts.maxSamples, // in-memory retention cap (config: aiScope.graph.maxSamples)
+      downsample: opts.downsample, // fold every N incoming samples into 1 averaged
+                                   // point (config aiScope.graph.downsample; >=1, 1 keeps all)
+      groupBuf: [],                // incoming samples pending a downsample fold
       baseW,                 // strip width in CSS px (drag the right edge to change)
       cw: baseW, ch: opts.height, // measured canvas CSS size (set by sizeGraphCanvas)
       msPerPx: 1,            // ms of history per horizontal pixel (timeline zoom); set below
@@ -1271,13 +1274,37 @@
     }
   }
 
+  // Average one downsample group into a single sample: per-class mean of the
+  // buffered values (nulls skipped; null if every value was null), timestamped
+  // with the latest sample in the group.
+  function foldSampleGroup(buf) {
+    const cols = buf[0].v.length;
+    const v = new Array(cols);
+    for (let i = 0; i < cols; i++) {
+      let sum = 0, count = 0;
+      for (const s of buf) { const x = s.v[i]; if (x != null) { sum += x; count++; } }
+      v[i] = count ? sum / count : null;
+    }
+    return { t: buf[buf.length - 1].t, v };
+  }
+
   // Append one time sample (the current moving average of every class). Samples
   // are retained up to g.maxSamples (dropping only the very oldest) — not trimmed
   // to the visible window — so widening the strip or zooming the timeline out
   // reveals history that was collected but not previously shown. Then repaint.
+  // With g.downsample > 1, incoming samples are buffered and only every Nth push
+  // commits one averaged point (keeps the strip's stored history coarser).
   function pushGraphSample(state, indicators, t) {
     const g = state.graph;
-    g.samples.push({ t, v: indicators.map((ind) => (ind.ma == null ? null : ind.ma)) });
+    const v = indicators.map((ind) => (ind.ma == null ? null : ind.ma));
+    if (g.downsample > 1) {
+      g.groupBuf.push({ t, v });
+      if (g.groupBuf.length < g.downsample) { drawGraph(state); return; }
+      g.samples.push(foldSampleGroup(g.groupBuf));
+      g.groupBuf.length = 0;
+    } else {
+      g.samples.push({ t, v });
+    }
     if (g.samples.length > g.maxSamples) {
       g.samples.splice(0, g.samples.length - g.maxSamples);
     }
@@ -1955,6 +1982,11 @@
             // the visible window); dropping only the oldest beyond it.
             maxSamples: typeof g.maxSamples === 'number' && g.maxSamples > 0
               ? Math.round(g.maxSamples) : GRAPH_MAX_SAMPLES_DEFAULT,
+            // Downsample factor: average every N incoming samples into 1 stored
+            // point (default 1 = keep every sample). aiScope feeds ~60/s, so 12
+            // yields ~5 stored points/s.
+            downsample: typeof g.downsample === 'number' && g.downsample > 0
+              ? Math.round(g.downsample) : 1,
             // Threshold reference line: a percent to draw a dashed line at
             // (default 50); null/false disables it. thresholdColor is optional.
             threshold: (g.threshold === null || g.threshold === false) ? null
