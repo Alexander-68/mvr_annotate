@@ -1,19 +1,19 @@
 {
   "clusters": [
     {
-      "id": "segments",
+      "id": "Segments",
       "exclusive": true,
       "buttons": ["Illeum", "R.Colon", "Tv.Colon", "L.Colon", "S.Colon", "Rectum"]
     },
     {
-      "id": "actions",
+      "id": "Actions",
       "exclusive": false,
       "buttons": ["Status", "Withdrawal", "Injection", "Hemostasis", "Biopsy", "Polyp"]
     },
     {
-      "id": "data",
+      "id": "Data",
       "exclusive": true,
-      "buttons": ["Data"]
+      "buttons": ["Visit", "Current Disease", "Open Forceps Size (mm)"]
     }
   ],
   "submenus": {
@@ -23,7 +23,6 @@
     "Polyp":      { "openOnTap": false, "modifiers": ["Forceps", "Cold Snare", "Hot Snare", "EMR", "ESD", "EFTR", "APC/Ablation", "Part.Resected", "Fully Resected", "Surgical"] },
     "Status":     { "openOnTap": true, "modifiers": ["Normal", "Inaccessible", "Not Explored", "Disease", "Hemorrhoids", "Cancer/Tumor"] },
     "Disease":    { "openOnTap": true, "modifiers": ["Ulcer.Colitis", "Infect.Colitis", "Ischem.Colitis", "Crohn's", "Diverticulosis", "Diverticulitis"] },
-    "Data":       { "openOnTap": true, "modifiers": ["Visit", "Current Disease", "Open Forceps Size (mm)"] },
     "Visit":      { "openOnTap": true, "modifiers": ["Beginning", "10th week", "20th week", "30th week", "40th week", "52th week" ] },
     "Open Forceps Size (mm)": { "openOnTap": true, "modifiers": ["4", "5", "6", "7", "8", "9", "10" ] },
     "Current Disease": { "openOnTap": true, "modifiers": ["Ulcer.Colitis", "Crohn's" ] }

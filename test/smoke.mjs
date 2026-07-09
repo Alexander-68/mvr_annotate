@@ -37,8 +37,10 @@ const server = createServer(async (req, res) => {
 const EXPECT = {
   segments: ['Illeum', 'R.Colon', 'Tv.Colon', 'L.Colon', 'S.Colon', 'Rectum'],
   actions: ['Status', 'Withdrawal', 'Injection', 'Hemostasis', 'Biopsy', 'Polyp'],
+  data: ['Visit', 'Current Disease', 'Open Forceps Size (mm)'],
   injectionSubmenu: ['Lift', 'Hemostasis', 'Botox', 'Steroid', 'Tattoo', 'Contrast'],
   hemostasisSubmenu: ['Hemoclip', 'Thermal', 'APC', 'Injection', 'Band', 'Topical', 'Surgical'],
+  ids: ['Segments', 'Actions', 'Data'],
 };
 
 const fail = (msg) => { console.error('✗ ' + msg); process.exitCode = 1; };
@@ -46,8 +48,8 @@ const ok = (msg) => console.log('✓ ' + msg);
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const buttonClusterLabels = () =>
   page.$$eval('.cluster', (els) => els
-    .filter((el) => el.querySelector('button'))
-    .map((el) => [...el.querySelectorAll('button .label')].map((s) => s.textContent)));
+    .filter((el) => el.querySelector('.cluster-button'))
+    .map((el) => [...el.querySelectorAll('.cluster-button .label')].map((s) => s.textContent)));
 
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
@@ -84,8 +86,8 @@ try {
   // Read the built clusters' button labels straight from the DOM.
   const clusters = await buttonClusterLabels();
 
-  if (clusters.length !== 2) fail(`expected 2 clusters at load, got ${clusters.length}`);
-  else ok('two clusters built from config');
+  if (clusters.length !== 3) fail(`expected 3 clusters at load, got ${clusters.length}`);
+  else ok('three clusters built from config');
 
   if (eq(clusters[0], EXPECT.segments)) ok('cluster 1 = segments buttons');
   else fail(`cluster 1 buttons mismatch: ${JSON.stringify(clusters[0])}`);
@@ -93,15 +95,53 @@ try {
   if (eq(clusters[1], EXPECT.actions)) ok('cluster 2 = actions buttons');
   else fail(`cluster 2 buttons mismatch: ${JSON.stringify(clusters[1])}`);
 
+  if (eq(clusters[2], EXPECT.data)) ok('cluster 3 = data buttons');
+  else fail(`cluster 3 buttons mismatch: ${JSON.stringify(clusters[2])}`);
+
+  const topIds = await page.$$eval('.cluster .cluster-id-label', (els) =>
+    els.slice(0, 3).map((el) => el.textContent));
+  if (eq(topIds, EXPECT.ids)) ok('top-level cluster ids rendered');
+  else fail(`cluster id labels mismatch: ${JSON.stringify(topIds)}`);
+
+  const minimizedIds = await page.$$eval('.cluster.minimized .cluster-min-toggle .label', (els) =>
+    els.map((el) => el.textContent));
+  if (eq(minimizedIds, EXPECT.ids)) ok('top-level clusters start minimized');
+  else fail(`default minimized clusters mismatch: ${JSON.stringify(minimizedIds)}`);
+
+  await page.locator('.cluster-min-toggle', { hasText: 'Actions' }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.cluster')]
+    .some((el) => el.querySelector('.cluster-id-label')?.textContent === 'Actions' &&
+      !el.classList.contains('minimized')));
+  ok('tap on minimized cluster id restores actions cluster');
+
+  const eventCountAfterRestore = await page.evaluate(() => window.__events.length);
+  if (eventCountAfterRestore === 0) ok('restore cluster tap did not inject an event');
+  else fail(`restore cluster tap injected events: ${eventCountAfterRestore}`);
+
+  const actionsCluster = page.locator('.cluster', {
+    has: page.locator('.cluster-id-label', { hasText: 'Actions' }),
+  });
+  await actionsCluster.locator('.cluster-id-label').click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.cluster')]
+    .some((el) => el.querySelector('.cluster-id-label')?.textContent === 'Actions' &&
+      el.classList.contains('minimized')));
+  await page.locator('.cluster-min-toggle', { hasText: 'Actions' }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.cluster')]
+    .some((el) => el.querySelector('.cluster-id-label')?.textContent === 'Actions' &&
+      !el.classList.contains('minimized')));
+  const eventCountAfterToggleRoundTrip = await page.evaluate(() => window.__events.length);
+  if (eventCountAfterToggleRoundTrip === 0) ok('minimize/restore cluster taps did not inject events');
+  else fail(`minimize/restore cluster taps injected events: ${eventCountAfterToggleRoundTrip}`);
+
   // Long-press the Injection host: hover, press, hold past LONG_PRESS_MS (500ms)
   // without moving so fireLongPress opens the submenu mid-hold, then release.
-  const injection = page.locator('.cluster button', { hasText: 'Injection' }).first();
+  const injection = actionsCluster.locator('.cluster-button', { hasText: 'Injection' });
   await longPress(injection);
 
   await page.waitForFunction(() =>
-    [...document.querySelectorAll('.cluster')].filter((el) => el.querySelector('button')).length === 3,
+    [...document.querySelectorAll('.cluster')].filter((el) => el.querySelector('button')).length === 4,
     { timeout: 2000 })
-    .then(() => ok('long-press Injection opened a submenu (3rd cluster)'))
+    .then(() => ok('long-press Injection opened a submenu'))
     .catch(() => fail('submenu did not open on long-press'));
 
   const all = await buttonClusterLabels();
@@ -110,15 +150,24 @@ try {
   if (submenu) ok('submenu = Injection modifiers');
   else fail(`Injection submenu buttons not found; clusters: ${JSON.stringify(all)}`);
 
-  const injectionCluster = page.locator('.cluster', {
-    has: page.locator('button', { hasText: 'Lift' }),
+  const submenuCluster = page.locator('.cluster', {
+    has: page.locator('.cluster-button', { hasText: 'Lift' }),
   });
-  await longPress(injectionCluster.locator('button', { hasText: 'Hemostasis' }));
+  const submenuTitle = await submenuCluster.locator('.cluster-id-label').textContent();
+  const submenuMinimizeCount = await submenuCluster.locator('.cluster-min-toggle').count();
+  if (submenuTitle === 'Injection' && submenuMinimizeCount === 0) {
+    ok('submenu title uses host label and has no minimize control');
+  } else {
+    fail(`submenu title/minimize mismatch: title=${JSON.stringify(submenuTitle)}, minimize=${submenuMinimizeCount}`);
+  }
+
+  const injectionCluster = submenuCluster;
+  await longPress(injectionCluster.locator('.cluster-button', { hasText: 'Hemostasis' }));
 
   await page.waitForFunction(() =>
-    [...document.querySelectorAll('.cluster')].filter((el) => el.querySelector('button')).length === 4,
+    [...document.querySelectorAll('.cluster')].filter((el) => el.querySelector('button')).length === 5,
     { timeout: 2000 })
-    .then(() => ok('long-press nested Hemostasis opened a sub-submenu (4th cluster)'))
+    .then(() => ok('long-press nested Hemostasis opened a sub-submenu'))
     .catch(() => fail('nested submenu did not open on long-press'));
 
   const nestedAll = await buttonClusterLabels();
@@ -129,7 +178,14 @@ try {
   const hemostasisCluster = page.locator('.cluster', {
     has: page.locator('button', { hasText: 'Hemoclip' }),
   });
-  await hemostasisCluster.locator('button', { hasText: 'Hemoclip' }).click();
+  const nestedTitle = await hemostasisCluster.locator('.cluster-id-label').textContent();
+  const nestedMinimizeCount = await hemostasisCluster.locator('.cluster-min-toggle').count();
+  if (nestedTitle === 'Hemostasis' && nestedMinimizeCount === 0) {
+    ok('sub-submenu title uses parent label and has no minimize control');
+  } else {
+    fail(`sub-submenu title/minimize mismatch: title=${JSON.stringify(nestedTitle)}, minimize=${nestedMinimizeCount}`);
+  }
+  await hemostasisCluster.locator('.cluster-button', { hasText: 'Hemoclip' }).click();
   const lastEvent = await page.evaluate(() => window.__events.at(-1));
   if (eq(lastEvent, { marker: 'Injection', modifier: 'Hemostasis', modifier2: 'Hemoclip' })) {
     ok('nested event uses modifier2');

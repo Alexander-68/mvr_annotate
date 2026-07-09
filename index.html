@@ -54,6 +54,31 @@
     cursor: grabbing;
   }
 
+  .cluster .cluster-id-label {
+    position: absolute;
+    top: 2px;
+    left: 10px;
+    z-index: 4;
+    max-width: calc(100% - 20px);
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.78);
+    font-family: system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    cursor: pointer;
+    pointer-events: auto;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+    touch-action: none;
+    white-space: nowrap;
+  }
+
+  .cluster .cluster-id-label.passive {
+    cursor: inherit;
+  }
+
   /* Every button in a cluster is the same size. font-size/weight are constant
      (they drive layout), so the box never changes; emphasis is done purely with
      a transform on the inner label, which doesn't affect layout. */
@@ -77,16 +102,30 @@
      next button's top outline. The -2px margin overlaps the two borders into a
      single line while every button keeps the same box size. Only the cluster's
      outer corners are rounded. */
-  .cluster button:not(:first-child) {
+  .cluster > .cluster-button:not(.cluster-first) {
     margin-top: -2px;
   }
-  .cluster button:first-child {
+  .cluster > .cluster-button.cluster-first {
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
   }
-  .cluster button:last-child {
+  .cluster > .cluster-button.cluster-last {
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
+  }
+
+  .cluster > .cluster-min-toggle {
+    display: none;
+    border-radius: 10px;
+  }
+
+  .cluster.minimized > .cluster-id-label,
+  .cluster.minimized > .cluster-button {
+    display: none;
+  }
+
+  .cluster.minimized > .cluster-min-toggle {
+    display: block;
   }
 
   /* Horizontal mode: same buttons laid out in a row instead of a column. The
@@ -95,16 +134,16 @@
   .cluster.horizontal {
     flex-direction: row;
   }
-  .cluster.horizontal button:not(:first-child) {
+  .cluster.horizontal > .cluster-button:not(.cluster-first) {
     margin-top: 0;
     margin-left: -2px;
   }
-  .cluster.horizontal button:first-child {
+  .cluster.horizontal > .cluster-button.cluster-first {
     border-radius: 0;
     border-top-left-radius: 10px;
     border-bottom-left-radius: 10px;
   }
-  .cluster.horizontal button:last-child {
+  .cluster.horizontal > .cluster-button.cluster-last {
     border-radius: 0;
     border-top-right-radius: 10px;
     border-bottom-right-radius: 10px;
@@ -358,6 +397,59 @@
     state.top = clamp(state.top, 0, Math.max(0, window.innerHeight - h));
   }
 
+  function capScaleToCanvas(state) {
+    const w0 = state.el.offsetWidth;
+    const h0 = state.el.offsetHeight;
+    if (!w0 || !h0) return;
+    const canvasMax = Math.min(window.innerWidth / w0, window.innerHeight / h0);
+    state.scale = clamp(state.scale, MIN_SCALE, Math.min(MAX_SCALE, canvasMax));
+  }
+
+  function applyMinimizedClass(state, minimized) {
+    state.minimized = minimized;
+    state.el.classList.toggle('minimized', minimized);
+  }
+
+  function moveClusterToOpenSpace(state) {
+    const w = state.el.offsetWidth * state.scale;
+    const h = state.el.offsetHeight * state.scale;
+    const maxL = Math.max(0, window.innerWidth - w);
+    const maxT = Math.max(0, window.innerHeight - h);
+    if (!hitsOtherCluster(state, clusterRect(state))) return;
+    for (let t = 0; t <= maxT; t += 24) {
+      for (let l = 0; l <= maxL; l += 24) {
+        if (!hitsOtherCluster(state, { l, t, r: l + w, b: t + h })) {
+          state.left = l;
+          state.top = t;
+          return;
+        }
+      }
+    }
+  }
+
+  function closeChildSubmenus(state) {
+    for (const btn of state.el.querySelectorAll('.cluster-button')) {
+      const host = submenuHosts.get(btn);
+      if (host?.submenu) closeSubmenu(host);
+    }
+  }
+
+  function setMinimized(state, minimized) {
+    if (!state.minimizable || state.minimized === minimized) return;
+    if (minimized) closeChildSubmenus(state);
+    applyMinimizedClass(state, minimized);
+    capScaleToCanvas(state);
+    clampIntoCanvas(state);
+    if (!minimized) moveClusterToOpenSpace(state);
+    apply(state);
+    markHome(state);
+  }
+
+  function toggleMinimized(state) {
+    setMinimized(state, !state.minimized);
+    saveLayout();
+  }
+
   // Persist each cluster's layout (position, zoom, orientation) across browser
   // sessions. Selection is intentionally NOT saved — clusters restore unselected.
   const STORAGE_KEY = 'mvr_clusters_v1';
@@ -371,6 +463,7 @@
         savedLayout[c.id] = {
           left: c.left, top: c.top, scale: c.scale,
           horizontal: c.horizontal, dock: c.dock,
+          ...(c.minimizable ? { minimized: c.minimized } : {}),
         };
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(savedLayout));
@@ -397,6 +490,10 @@
     if (!s) return false;
     if (s.horizontal) setOrientation(state, true); // reflows before we measure
     state.dock = s.dock ?? null;
+    if (state.minimizable) {
+      applyMinimizedClass(state,
+        typeof s.minimized === 'boolean' ? s.minimized : !state.transient);
+    }
     if (typeof s.scale === 'number') {
       const w0 = state.el.offsetWidth;
       const h0 = state.el.offsetHeight;
@@ -440,18 +537,40 @@
 
   // Build one independent cluster from a list of button labels. `id` is a stable
   // key used to persist/restore this cluster's layout across sessions.
-  function createCluster(id, labels, left, top, exclusive = true, transient = false) {
+  function createCluster(id, labels, left, top, exclusive = true, transient = false, title = id) {
     const el = document.createElement('div');
     el.className = 'cluster';
-    for (const label of labels) {
+    if (title) {
+      const idLabel = document.createElement('span');
+      idLabel.className = `cluster-id-label${transient ? ' passive' : ''}`;
+      idLabel.textContent = title;
+      el.appendChild(idLabel);
+    }
+
+    if (!transient) {
+      const minToggle = document.createElement('button');
+      minToggle.type = 'button';
+      minToggle.className = 'cluster-min-toggle';
+      minToggle.dataset.clusterToggle = 'true';
+      const minLabel = document.createElement('span');
+      minLabel.className = 'label';
+      minLabel.textContent = id;
+      minToggle.appendChild(minLabel);
+      el.appendChild(minToggle);
+    }
+
+    labels.forEach((label, i) => {
       const btn = document.createElement('button');
       btn.type = 'button';
+      btn.className = 'cluster-button';
+      if (i === 0) btn.classList.add('cluster-first');
+      if (i === labels.length - 1) btn.classList.add('cluster-last');
       const span = document.createElement('span');
       span.className = 'label';
       span.textContent = label;
       btn.appendChild(span);
       el.appendChild(btn);
-    }
+    });
     return initCluster(id, el, left, top, exclusive, transient);
   }
 
@@ -510,10 +629,13 @@
                             // its selection is discarded, but its position persists
       markerOverride: null, // submenu root marker; ordinary clusters leave null
       modifierPath: [],      // submenu ancestor labels already chosen
+      minimizable: !!el.querySelector('.cluster-min-toggle'),
+      minimized: false,
       selected: null,       // last-selected button (only meaningful when exclusive)
       pointers: new Map(), // pointerId -> {x, y}
       mode: null,          // null (pending) | 'drag' | 'pinch'
       tapButton: null,
+      tapToggle: null,
       moved: false,
       longPress: false,      // did the single-pointer hold cross LONG_PRESS_MS?
       longPressTimer: null,
@@ -529,7 +651,14 @@
     apply(state);
     setupCluster(state);
     clusters.push(state);
-    state.restored = transient ? false : restoreLayout(state); // saved layout
+    state.restored = restoreLayout(state); // saved layout
+    if (!state.restored && state.minimizable && !transient) {
+      applyMinimizedClass(state, true);
+      capScaleToCanvas(state);
+      clampIntoCanvas(state);
+      apply(state);
+      markHome(state);
+    }
     return state;
   }
 
@@ -714,7 +843,9 @@
       if (state.pointers.size === 1) {
         state.mode = null;
         state.moved = false;
-        state.tapButton = e.target.closest('button');
+        const toggle = e.target.closest('.cluster-id-label, .cluster-min-toggle');
+        state.tapToggle = toggle && el.contains(toggle) ? toggle : null;
+        state.tapButton = state.tapToggle ? null : e.target.closest('.cluster-button');
         state.startX = e.clientX;
         state.startY = e.clientY;
         state.startLeft = state.left;
@@ -726,7 +857,9 @@
         state.holdActionDone = false;
         state.dragLocked = false;
         clearLongPress(state);
-        state.longPressTimer = setTimeout(() => fireLongPress(state), LONG_PRESS_MS);
+        if (state.tapButton) {
+          state.longPressTimer = setTimeout(() => fireLongPress(state), LONG_PRESS_MS);
+        }
       } else if (state.pointers.size === 2) {
         beginPinch(state);
       }
@@ -854,9 +987,11 @@
         const wasTap = state.mode !== 'drag' && state.mode !== 'pinch';
         const handledOnHold = state.holdActionDone;
         const btn = state.tapButton;
+        const toggle = state.tapToggle;
         el.classList.remove('dragging');
         state.mode = null;
         state.tapButton = null;
+        state.tapToggle = null;
         state.moved = false;
         state.longPress = false;
         state.holdActionDone = false;
@@ -864,6 +999,10 @@
         if (handledOnHold) {
           // The long-hold already opened/closed the submenu while pressing and
           // locked out the drag, so the parent didn't move — nothing to do here.
+          return;
+        }
+        if (wasTap && toggle) {
+          toggleMinimized(state);
           return;
         }
         if (wasTap && btn) {
@@ -938,7 +1077,7 @@
   // hosts start a marker (`Injection` -> modifier). Hosts inside a submenu
   // extend that submenu's event path (`Injection` -> `Hemostasis` -> modifier2).
   function registerSubmenuHostsForCluster(state) {
-    for (const btn of state.el.querySelectorAll('button')) {
+    for (const btn of state.el.querySelectorAll('.cluster-button')) {
       const label = buttonLabel(btn).trim();
       const spec = submenuSpecs.get(label);
       if (!spec) continue;
@@ -954,6 +1093,7 @@
         id: submenuId(marker, modifierPath),
         modifiers: spec.modifiers,
         openOnTap: spec.openOnTap,
+        title: label,
         submenu: null,
         cluster: state,
       });
@@ -988,6 +1128,7 @@
         window.innerWidth - c.el.offsetWidth - 40,
       );
       clampIntoCanvas(c);
+      moveClusterToOpenSpace(c);
       apply(c);
       markHome(c);
     }
@@ -1107,7 +1248,7 @@
 
   function openSubmenu(host) {
     if (host.submenu) return; // already open
-    const sub = createCluster(host.id, host.modifiers, 0, 0, true, true);
+    const sub = createCluster(host.id, host.modifiers, 0, 0, true, true, host.title);
     sub.markerOverride = host.marker;
     sub.modifierPath = [...host.modifierPath];
     host.submenu = sub;
@@ -1127,7 +1268,7 @@
   function closeSubmenu(host) {
     if (!host.submenu) return;
     const sub = host.submenu;
-    for (const btn of sub.el.querySelectorAll('button')) {
+    for (const btn of sub.el.querySelectorAll('.cluster-button')) {
       const childHost = submenuHosts.get(btn);
       if (childHost?.submenu) closeSubmenu(childHost);
       submenuHosts.delete(btn);
