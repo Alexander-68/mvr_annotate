@@ -1,0 +1,28 @@
+{
+  "recordingWarning": {
+    "text": "Recording is not active. Start recording on the MVR before adding timeline annotations.",
+    "backgroundColor": "#f59e0b"
+  },
+  "clusters": [
+    {
+      "id": "Segments",
+      "exclusive": true,
+      "buttons": ["Illeum", "R.Colon", "Tv.Colon", "L.Colon", "S.Colon", "Rectum"]
+    },
+    {
+      "id": "Actions",
+      "exclusive": false,
+      "buttons": ["Withdrawal", "Injection", "Hemostasis", "Biopsy", "Polyp"]
+    }
+  ],
+  "aiScope": {
+    "id": "ai_classes",
+    "movingAverage": 12,
+    "graph": { "id": "ai_graph", "windowSeconds": 30, "width": 320, "height": 84, "maxSamples": 216000, "downsample": 3,
+      "recordingFillColor": "rgba(64, 64, 255, 0.16)", "recordingEdgeColor": "rgba(80, 80, 255, 0.9)", "snapshotColor": "rgba(120, 210, 255, 0.9)" },
+    "classes": [
+      { "cls": 0, "label": "Blur", "color": "#ff69b4", "threshold": 50 },
+      { "cls": 1, "label": "PooP", "color": "#8a5a2b", "threshold": 60 }
+    ]
+  }
+}
