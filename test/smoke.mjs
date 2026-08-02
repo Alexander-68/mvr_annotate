@@ -15,16 +15,25 @@ import { dirname, join, normalize } from 'node:path';
 import { chromium } from 'playwright';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const TYPES = { '.html': 'text/html', '.json': 'application/json', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html', '.json': 'application/json', '.png': 'image/png' };
 
 // Minimal static file server rooted at the project dir.
 const server = createServer(async (req, res) => {
   try {
-    const rel = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^(\.\.[/\\])+/, '');
-    if (rel === '/ai/events') {
+    // normalize() yields backslashes on Windows; fold them back to '/' so the
+    // route comparisons below work on every platform.
+    const rel = normalize(decodeURIComponent(req.url.split('?')[0]))
+      .replace(/^(\.\.[/\\])+/, '').replace(/\\/g, '/');
+    if (rel === '/ai/events' || rel === '/study/events') {
       res.writeHead(204); res.end(); return;
     }
-    const path = join(root, rel === '/' ? 'index.html' : rel);
+    // Pin the menu content to the colonoscopy profile so the test exercises the
+    // CODE (nested submenus, ids, minimize) and not whichever profile currently
+    // ships as mvr_annotate.json.
+    const file = rel === '/' ? 'index.html'
+      : rel === '/mvr_annotate.json' ? 'mvr_annotate_colonoscopy.json'
+      : rel;
+    const path = join(root, file);
     const body = await readFile(path);
     const ext = path.slice(path.lastIndexOf('.'));
     res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream' });
@@ -37,7 +46,7 @@ const server = createServer(async (req, res) => {
 const EXPECT = {
   segments: ['Illeum', 'R.Colon', 'Tv.Colon', 'L.Colon', 'S.Colon', 'Rectum'],
   actions: ['Status', 'Withdrawal', 'Injection', 'Hemostasis', 'Biopsy', 'Polyp'],
-  data: ['Visit', 'Current Disease', 'Open Forceps Size (mm)'],
+  data: ['Trial Timeframe', 'Current Disease', 'Camera model', 'Open Forceps Size (mm)'],
   injectionSubmenu: ['Lift', 'Hemostasis', 'Botox', 'Steroid', 'Tattoo', 'Contrast'],
   hemostasisSubmenu: ['Hemoclip', 'Thermal', 'APC', 'Injection', 'Band', 'Topical', 'Surgical'],
   ids: ['Data', 'Segments', 'Actions'],
@@ -153,30 +162,12 @@ if (clusters.length !== 3) fail(`expected 3 clusters at load, got ${clusters.len
   if (warningBg === 'rgb(245, 158, 11)') ok('recording warning background is orange');
   else fail(`recording warning background mismatch: ${warningBg}`);
   const warningBox = await warning.boundingBox();
-  await page.mouse.move(warningBox.x + warningBox.width / 2, warningBox.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(warningBox.x + warningBox.width / 2 + 24, warningBox.y + 36);
-  await page.mouse.up();
-  const movedWarningBox = await warning.boundingBox();
-  if (movedWarningBox.x > warningBox.x + 10 && movedWarningBox.y > warningBox.y + 10) {
-    ok('recording warning can be moved');
+  const viewport = page.viewportSize();
+  const centred = Math.abs((warningBox.x + warningBox.width / 2) - viewport.width / 2) < 2;
+  if (centred && warningBox.y + warningBox.height < viewport.height) {
+    ok('recording warning sits centred near the bottom');
   } else {
-    fail(`recording warning did not move: before=${JSON.stringify(warningBox)} after=${JSON.stringify(movedWarningBox)}`);
-  }
-  await page.mouse.move(movedWarningBox.x + movedWarningBox.width / 2, movedWarningBox.y + movedWarningBox.height / 2);
-  await page.mouse.wheel(0, -420);
-  const resizedWarningBox = await warning.boundingBox();
-  if (resizedWarningBox.width > movedWarningBox.width + 20 && resizedWarningBox.height > movedWarningBox.height + 12) {
-    ok('recording warning can be resized with mouse wheel scale');
-  } else {
-    fail(`recording warning did not scale: before=${JSON.stringify(movedWarningBox)} after=${JSON.stringify(resizedWarningBox)}`);
-  }
-  const savedWarningLayout = await page.evaluate(() => JSON.parse(localStorage.getItem('mvr_recording_warning_v1')));
-  if (savedWarningLayout?.scale > 1 && typeof savedWarningLayout.left === 'number' &&
-      typeof savedWarningLayout.top === 'number') {
-    ok('recording warning position/scale persisted');
-  } else {
-    fail(`recording warning layout not persisted: ${JSON.stringify(savedWarningLayout)}`);
+    fail(`recording warning misplaced: ${JSON.stringify(warningBox)}`);
   }
   await page.locator('.recording-warning-dismiss').click();
   await page.waitForFunction(() => !document.querySelector('.recording-warning')?.classList.contains('visible'));

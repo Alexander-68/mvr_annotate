@@ -1,9 +1,8 @@
-## Study timeline
+## Study timeline — record catalog and injection API
 
-During an active study MVR records a **timeline** of events into a file
-`timeline.ndjson` in the study folder (one per enabled storage, next to the
-`study_info.yaml` file). The file is written in
-[NDJSON](https://github.com/ndjson/ndjson-spec) format: one JSON object per line.
+What the timeline is, and an example file, are in
+[`timeline.md`](timeline.md). This document is the reference: every `ev` record
+and the endpoint that injects external ones.
 
 The file is created when the study folder is created — lazily, when the first
 file is saved into the study **or** when the first timeline event is injected via
@@ -11,10 +10,6 @@ file is saved into the study **or** when the first timeline event is injected vi
 start of the study is flushed to it then. If a finished study is later re-opened
 to append new recordings, a new `study_start` … `study_finish` block is appended
 after the existing content.
-
-Every record has an `"ts"` field (event time, epoch milliseconds) and an `"ev"`
-field (event name). The first record is always `study_start`, the last is
-`study_finish`.
 
 | `ev`                       | Extra fields                                               | Meaning                                                                                                                          |
 | -------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,29 +28,16 @@ field (event name). The first record is always `study_start`, the last is
 
 `file_name` is the file name only, without the study-folder path.
 
-Example:
-
-```
-{"ts":1751731200000,"ev":"study_start","folder_name":"20260705_083129_6d244bd0","device_id":"6d244bd0"}
-{"ts":1751731200500,"ev":"signal_good","input_name":"IN1 DP","signal_resolution":"1920x1080"}
-{"ts":1751731205000,"ev":"rec_start","file_name":"V0001.mp4"}
-{"ts":1751731260000,"ev":"snapshot","file_name":"I0002.jpg"}
-{"ts":1751731300000,"ev":"ext","ip":"192.168.1.40","marker":"incision"}
-{"ts":1751731400000,"ev":"rec_stop","file_name":"V0001.mp4"}
-{"ts":1751731405000,"ev":"study_finish"}
-```
-
-External events can be added over the API with `PUT /api/study/event` (see above),
-or from a web app running on the device via the
+External events can be added over the API with `PUT /api/study/event` (below), or
+from a web app running on the device via the
 `window.MvrOverlay.injectTimelineEvent()` bridge method.
 
 ---
 
 #### `PUT /api/study/event`
 
-Inject a custom event into the current study's **timeline** (see *Study timeline*
-below). The request body must be a JSON object; its fields are recorded alongside
-the event.
+Inject a custom event into the current study's timeline. The request body must be
+a JSON object; its fields are recorded alongside the event.
 
 The event is stored as an `"ext"` record: MVR adds `"ev":"ext"`, `"ts"` (epoch
 milliseconds) and `"ip"` (the requesting client's IP address). The reserved keys

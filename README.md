@@ -68,9 +68,9 @@ an annotation while the device reports recording is stopped (requires MVR FW
 }
 ```
 
-Omit the block, or leave either value empty, to disable it. The banner can be
-dragged and pinch/wheel-resized; its position and scale persist. **Dismiss** hides
-it for the current browser session. Per cluster, add `"recordingWarning": false`
+Omit the block, or leave either value empty, to disable it. The banner sits
+centred near the bottom of the screen; **Dismiss** hides it for the current
+browser session. Per cluster, add `"recordingWarning": false`
 to opt that cluster (and its submenus) out of the warning — handy for
 data-entry clusters used before recording starts. Defaults to `true`.
 
@@ -107,13 +107,13 @@ Build the distribution zip from the three shipped files (nothing else — no
 `node_modules`, no test files):
 
 ```bash
-zip mvr_annotate.zip index.html favicon.svg mvr_annotate.json
+zip mvr_annotate.zip index.html fv.png mvr_annotate.json
 ```
 
 `mvr_annotate.zip` must contain exactly:
 
 - `index.html` — the app (interaction/layout logic)
-- `favicon.svg` — the app icon
+- `fv.png` — the app icon
 - `mvr_annotate.json` — **your** annotation markers
 
 ## Installing on an MVR/MTR device

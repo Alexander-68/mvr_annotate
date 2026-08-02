@@ -8,7 +8,7 @@ A tiny, dependency-free static web project — no package manager or test framew
 
 - `index.html` — the actual page: a fullscreen transparent `<canvas>` overlay carrying **button clusters** on top. Uses the Pointer Events API (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`) to unify mouse, touch, and pen input in one code path, with a movement threshold (`DRAG_THRESHOLD` in the script) to distinguish a tap from a drag. See the button-cluster section below. It holds **only the interaction/layout logic** — the menu *content* lives in `mvr_annotate.json` (below).
 - `mvr_annotate.json` — **the menu content**, split out from the code so labels/clusters/submenus can be edited without touching the logic. `index.html` `fetch()`es it once at startup (`init()`) and builds the UI from it (`buildFromConfig`); see [Menu content](#menu-content-mvr_annotatejson). This file is the **single source of truth** — there is no embedded fallback: if it can't be fetched/parsed the page **fails loud** with an on-screen banner (`showConfigError`) and builds no menus.
-- `favicon.svg` — the page icon, referenced by `index.html`.
+- `fv.png` — the page icon, referenced by `index.html`.
 
 ## Running / viewing
 
@@ -19,7 +19,7 @@ Just open the `index.html` file with a web browser.
 Package the shipped files into `mvr_annotate.zip`:
 
 ```bash
-zip mvr_annotate.zip index.html favicon.svg mvr_annotate.json
+zip mvr_annotate.zip index.html fv.png mvr_annotate.json
 ```
 
 > **Loading note:** because the page `fetch()`es `mvr_annotate.json` at startup, opening `index.html` directly via `file://` may be blocked by CORS in some browsers/WebViews (the fail-loud banner appears). Serve the folder over HTTP (e.g. `python3 -m http.server`) when viewing locally; on the MVR device it is served over the `LOCAL`/`HTTP(S)` scheme so `fetch` works.
@@ -106,15 +106,17 @@ Notes:
 - `id` is the cluster's stable **layout-persistence key** (`saveLayout`/`restoreLayout`) — changing it orphans that cluster's saved position/zoom/orientation.
 - A cluster's `id` must be unique; submenu ids are path-derived (`<host-slug>-modifier`, `<root-slug>-<modifier-slug>-modifier`, ...), and must not collide with a cluster `id`.
 
-Current content:
+Read `mvr_annotate.json` for the current menu content — it is the source of
+truth, so it is not restated here. `mvr_annotate_colonoscopy.json` and
+`mvr_annotate_ppm.json` are alternative profiles kept for reference; copy one
+over `mvr_annotate.json` to ship it. `test/smoke.mjs` pins the colonoscopy
+profile so the test exercises the code, not whichever profile currently ships.
 
-- Cluster `segments` (exclusive): `Illeum, R.Colon, Tv.Colon, L.Colon, S.Colon, Rectum`
-- Cluster `actions` (non-exclusive selection): `Status, Withdrawal, Injection, Hemostasis, Biopsy, Polyp`
-- Injection submenu (transient, exclusive; long-press Injection): `Lift, Hemostasis, Botox, Steroid, Tattoo, Contrast`
-- Hemostasis submenu (transient, exclusive; long-press Hemostasis): `Hemoclip, Thermal, APC, Injection, Band, Topical, Surgical`
-- Biopsy submenu (transient, exclusive; long-press Biopsy): `Forceps, FNA/FNB, Brush, Snare, Suction`
-- Polyp submenu (transient, exclusive; long-press Polyp): `Forceps, Cold Snare, Hot Snare, EMR, ESD, EFTR, APC/Ablation, Part.Resected, Fully Resected, Surgical`
-- Status submenu (transient, exclusive; tap or long-press Status): `Normal, Inaccessible, Not Explored, Ulcer.Colitis, Infect.Colitis, Ischem.Colitis, Crohn's, Diverticulosis, Diverticulitis, Hemorrhoids, Cancer/Tumor`
+**Recording-off warning** — an optional top-level `recordingWarning`
+(`{text, backgroundColor}`) builds a fixed banner centred near the bottom of the
+screen with a **Dismiss** button. It is shown by `maybeShowRecordingWarning()`
+when the bridge reports recording stopped, and dismissal is session-only
+(`sessionStorage`). It has no drag/zoom/persistence — position is pure CSS.
 
 ## aiScope data (vision-AI inference stream)
 
