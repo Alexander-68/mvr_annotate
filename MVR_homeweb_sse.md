@@ -1,11 +1,18 @@
-# MVR HomeWeb Server-Sent Events (live study & AI feeds)
+# MVR HomeWeb API (live study, AI, and device data)
 
-The **HomeWeb** server hosts a user-supplied web app on the device (`homeweb.zip`
-in the iMave folder, served at `http://<device>:3335/`). In addition to serving
-static files it exposes **Server-Sent Events (SSE)** endpoints that push live
-device events to the browser as they happen — no polling required.
+The **HomeWeb** server hosts the self-hosted web apps of the device. Each one has
+a slot and lives in its own sub-folder: `homeweb_<slot>.zip` in the iMave folder,
+served at `http://<device>:3335/<slot>/` (slots 1–99 ship with the firmware,
+100+ are uploaded by the user). In addition to serving static files it exposes
+**Server-Sent Events (SSE)** endpoints that push live device events to the
+browser as they happen — no polling required.
 
-Two independent feeds exist:
+Reference your assets **relatively** (`href="styles.css"`), so the page works
+under its sub-folder. A bundle that references them from the root
+(`/assets/x.js`, the Vite/React default) still loads — the server falls back to
+the `Referer` to find the app — but relative paths avoid relying on that.
+
+Two independent SSE feeds exist:
 
 | Feed | SSE endpoint | Poll fallback | Payload |
 |------|--------------|---------------|---------|
@@ -15,7 +22,10 @@ Two independent feeds exist:
 Both are **unidirectional** (device → browser). The browser cannot push back
 over these; to *write* an event into the study timeline from the page, use
 `window.MvrOverlay.injectTimelineEvent(...)` (see
-[`MVR_webapp_bridge.md`](MVR_webapp_bridge.md)).
+[`MVR_webapp_bridge.md`](MVR_webapp_bridge.md)). Device identity and paid-feature
+activation are not served here either — they are read from the same bridge
+(`getDeviceInfo()`, `hasFeature(id)`), which is not reachable from an ordinary
+browser on the network.
 
 > This document covers the **HomeWeb browser app** only. The transparent
 > "Run over active Study" **overlay** WebView uses the separate, pull-only
@@ -138,9 +148,11 @@ es.onmessage = (e) => render(JSON.parse(e.data));
   keep in mind the replay buffer on connect may include the tail of a just-ended
   study). A connection actually closing means the home app was disabled or the
   device restarted — treat that as "reconnect", which `EventSource` does for you.
-- Both feeds share the same origin/port as the served web app (`:3335`), so
-  `new EventSource('/study/events')` (a same-origin relative URL) just works from
-  a page loaded out of `homeweb.zip`.
+- Both feeds share the same origin/port as the served web app (`:3335`) and live
+  at the server root, shared by every hosted app, so
+  `new EventSource('/study/events')` just works from any hosted page. A path
+  relative to the app's own sub-folder (`new EventSource('study/events')`, which
+  resolves to `/<slot>/study/events`) is served as well.
 
 ---
 

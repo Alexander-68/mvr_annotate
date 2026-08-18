@@ -10,6 +10,7 @@ This lets a web page:
   desktop/mobile browser), and
 - read basic, non-sensitive **device identity** (device ID, hardware model, app
   and firmware version), and
+- check whether a **paid feature** is activated on the device, and
 - read the current active **study path**, and
 - read the current **recording status**, and
 - (overlay mode only) opt a touch gesture out of native click-through.
@@ -87,6 +88,35 @@ const fw    = window.MvrOverlay.getFirmwareVersion();  // may be null
 > lower 6 digits of a `yyyyMMdd` build stamp (i.e. `yyMMdd`) — for a build made
 > on 2026-07-04 the value is `260704`. Larger numbers indicate newer builds, so
 > a numeric comparison is a reliable "newer than" check within the same century.
+
+---
+
+## Paid features
+
+### `window.MvrOverlay.hasFeature(id) → boolean`
+
+Returns `true` when the paid feature `id` is activated on this device. Feature
+IDs are stable strings:
+
+| Feature ID | Feature |
+| --- | --- |
+| `mvr_pro_4k` | 4K recording |
+| `mvr_pro_pacs` | DICOM / PACS |
+| `mvr_435_activation` | MVR unlock (the `435` in the name is historical) |
+| `mvx_441_activation` | MVX441 |
+| `mvr_aiscope` | AI Scope |
+
+```js
+if (window.MvrOverlay?.hasFeature?.('mvr_aiscope')) {
+    // AI-Scope UI
+}
+```
+
+Notes:
+
+- Only the on/off state is exposed. The activation keys themselves are **not**
+  readable from a web app.
+- An unknown feature ID returns `false`.
 
 ---
 
