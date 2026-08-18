@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Toggle Button Test</title>
+<title>Annotate</title>
+<meta name="description" content="Custom annotations">
 <link rel="icon" type="image/png" href="fv.png">
 <style>
   * {
@@ -20,6 +21,10 @@
     background: transparent;
     touch-action: manipulation;
   }
+
+  /* Off-device (no native MvrOverlay bridge, e.g. a desktop browser) there is no
+     camera preview underneath, so paint black instead of showing through. */
+  html.no-bridge, html.no-bridge body { background: #000; }
 
   #stage {
     position: fixed;
@@ -392,6 +397,8 @@
 </div>
 
 <script>
+  if (!window.MvrOverlay) document.documentElement.classList.add('no-bridge');
+
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
 
@@ -1446,7 +1453,8 @@
   // parent cluster can no longer be dragged by this gesture (dragLocked) and
   // pointer-up won't re-toggle it (holdActionDone). To reposition instead, start
   // dragging before the threshold — an early drag cancels this timer.
-  function fireLongPress(state) {    // Only a clean single-finger hold on a button qualifies.
+  function fireLongPress(state) {
+    // Only a clean single-finger hold on a button qualifies.
     if (state.mode === 'drag' || state.mode === 'pinch') return;
     if (state.pointers.size !== 1) return;
     const btn = state.tapButton;
@@ -1489,7 +1497,8 @@
     state.mode = 'pinch';
     state.tapButton = null;
     state.el.classList.remove('dragging');
-    clearLongPress(state);    // A two-finger gesture is free-form manipulation (zoom / twist / move), so
+    clearLongPress(state);
+    // A two-finger gesture is free-form manipulation (zoom / twist / move), so
     // the cluster leaves any docked edge. Its orientation stays put (sticky) —
     // only a deliberate twist changes it.
     state.dock = null;
@@ -1541,7 +1550,8 @@
         state.startTop = state.top;
         // Start the long-press clock; a drag or second finger cancels it. When
         // it fires (finger still down, no drag), a submenu host pops its submenu
-        // open right then — see fireLongPress.        state.holdActionDone = false;
+        // open right then — see fireLongPress.
+        state.holdActionDone = false;
         state.dragLocked = false;
         clearLongPress(state);
         if (state.tapButton) {
@@ -1586,7 +1596,8 @@
           state.moved = true;
           state.mode = 'drag';
           el.classList.add('dragging');
-          clearLongPress(state); // a drag is not a hold        }
+          clearLongPress(state); // a drag is not a hold
+        }
         if (state.mode === 'drag') {
           let w = el.offsetWidth * state.scale;
           let h = el.offsetHeight * state.scale;
@@ -1686,7 +1697,8 @@
         state.mode = null;
         state.tapButton = null;
         state.tapToggle = null;
-        state.moved = false;        state.holdActionDone = false;
+        state.moved = false;
+        state.holdActionDone = false;
         state.dragLocked = false;
         if (handledOnHold) {
           // The long-hold already opened/closed the submenu while pressing and
