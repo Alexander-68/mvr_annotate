@@ -1,0 +1,31 @@
+{
+  "recordingWarning": {
+    "text": "Recording is not active. Start recording on the MVR before adding timeline annotations.",
+    "backgroundColor": "#f59e0b"
+  },
+  "clusters": [
+    {
+      "id": "Data",
+      "exclusive": true,
+      "recordingWarning": false,
+      "buttons": ["Trial Timeframe", "Current Disease", "Open Forceps Size (mm)"]
+    },
+    {
+      "id": "Segments",
+      "exclusive": true,
+      "buttons": ["Illeum", "R.Colon", "Tv.Colon", "L.Colon", "S.Colon", "Rectum"]
+    }
+  ],
+  "submenus": {
+    "SegmentStatus": { "openOnTap": true, "modifiers": ["Landmarked", "Inaccessible", "Not Explored", "Fully Resected", "Partially Resected"] },
+    "Illeum":     "SegmentStatus",
+    "R.Colon":    "SegmentStatus",
+    "Tv.Colon":   "SegmentStatus",
+    "L.Colon":    "SegmentStatus",
+    "S.Colon":    "SegmentStatus",
+    "Rectum":     "SegmentStatus",
+    "Trial Timeframe": { "openOnTap": true, "modifiers": ["Beginning", "10th week", "20th week", "30th week", "40th week", "52th week" ] },
+    "Open Forceps Size (mm)": { "openOnTap": true, "modifiers": ["4", "5", "6", "7", "8", "9", "10" ] },
+    "Current Disease": { "openOnTap": true, "modifiers": ["Ulcerative Colitis", "Crohn's" ] }
+  }
+}
