@@ -17,6 +17,7 @@ A tiny, dependency-free static web project — no package manager or test framew
 - `index.html` — the actual page: a fullscreen transparent `<canvas>` overlay carrying **button clusters** on top. Uses the Pointer Events API (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`) to unify mouse, touch, and pen input in one code path, with a movement threshold (`DRAG_THRESHOLD` in the script) to distinguish a tap from a drag. See the button-cluster section below. It holds **only the interaction/layout logic** — the menu *content* lives in `mvr_annotate.json` (below).
 - `mvr_annotate.json` — **the menu content**, split out from the code so labels/clusters/submenus can be edited without touching the logic. `index.html` `fetch()`es it once at startup (`init()`) and builds the UI from it (`buildFromConfig`); see [Menu content](#menu-content-mvr_annotatejson). This file is the **single source of truth** — there is no embedded fallback: if it can't be fetched/parsed the page **fails loud** with an on-screen banner (`showConfigError`) and builds no menus.
 - `fv.png` — the page icon, referenced by `index.html`.
+- `assets/` — the aiScope traffic-light SVGs (`status-icon-{ok,warn,bad}-{,outline,gradient}.svg`), referenced by path from `mvr_annotate.json` (`aiScope.icons`). Shipped in the zip.
 
 ## Running / viewing
 
@@ -27,7 +28,7 @@ Just open the `index.html` file with a web browser.
 Package the shipped files into `mvr_annotate.zip`:
 
 ```bash
-zip mvr_annotate.zip index.html fv.png mvr_annotate.json
+zip -r mvr_annotate.zip index.html fv.png mvr_annotate.json assets/
 ```
 
 > **Loading note:** because the page `fetch()`es `mvr_annotate.json` at startup, opening `index.html` directly via `file://` may be blocked by CORS in some browsers/WebViews (the fail-loud banner appears). Serve the folder over HTTP (e.g. `python3 -m http.server`) when viewing locally; on the MVR device it is served over the `LOCAL`/`HTTP(S)` scheme so `fetch` works.
@@ -193,10 +194,11 @@ Fields:
 
 ### What the web side does with it
 
-- **Live indicators** — each class shows its moving-averaged score as a live `0..100%` (window = config `aiScope.movingAverage`).
-- **Above-threshold accumulators** — per class, each sample contributes its overshoot past the class `threshold` out of the `(100 - threshold)` headroom; the running percent is accumulated overshoot / accumulated headroom. Two accumulators run in parallel: a **per-study** one and a **per-video** one that advances only while recording.
+- **Live indicators** — each class shows its class label above a **traffic-light icon** for its moving-averaged score (window = `aiScope.movingAverage` packets, default 30 — at ~20 packets/s that is the ~1.5 s the QC proposal asks for). The icon is picked on the model's native `0..1` scale: below `aiScope.iconThresholds.good` (default 0.5) the **good** icon, above `iconThresholds.bad` (default 0.66) the **bad** one, **warn** in between. `aiScope.iconHysteresis` (default 0.01) is a dead band around each boundary — a band is only left once the average clears the boundary by that much, so a score sitting on a threshold can't flicker the icon (`iconBand`). `aiScope.icons` maps `good`/`warn`/`bad` to image paths (default the outline SVGs in `assets/`). Numeric readouts are gone; the icon is the whole readout. The cell background is transparent (the live camera preview shows through); `aiScope.indicatorFrame: false` also hides the cell outline (omitted/`true` keeps it).
+- **Above-threshold accumulators** — per class, each sample contributes its overshoot past the class `threshold` out of the `(100 - threshold)` headroom; the running percent is accumulated overshoot / accumulated headroom. Two accumulators run in parallel: a **per-study** one and a **per-video** one that advances only while recording. Not displayed — they only feed the per-video summary event below.
 - **History graph** — an in-memory ring of `{ t, v: [pct|null, …], frm }` samples (newest last, `v` aligned to `classes`), capped at `aiScope.graph.maxSamples` and optionally coarsened by `aiScope.graph.downsample`. In-memory only — **never persisted** (only the graph's layout/zoom is saved); reset when a new study begins.
-- **Per-video summary event** — on `rec_pause`/`rec_stop`, `injectVideoAccEvent()` injects `{marker:"aiScope", event:"video_summary", classes:[{cls,pct},…], model?}` (the `model` field carries the cached `mdl` name) onto the timeline.
+- **Band-change events** — every time a class's icon changes band, `updateAiIndicators()` injects `{marker:"aiScope", event:<class label>, note:"good"|"warn"|"bad"}` onto the timeline. Recording state is irrelevant — the icon is what the endoscopist sees, so it is what the timeline records. The first packet's band counts too (it establishes the starting state).
+- **Per-video summary event** — on `rec_pause`/`rec_stop`, `injectVideoAccEvent()` injects `{marker:"aiScope", event:"video_summary", classes:[{cls,pct},…], model?}` (the `model` field carries the cached `mdl` name). **Currently disabled** by the `INJECT_VIDEO_SUMMARY` constant (the band-change events replaced it); the code and its accumulators are kept, flip the constant to bring it back.
 
 ## Important: notifying the native Android host
 

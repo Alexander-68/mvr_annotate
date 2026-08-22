@@ -223,8 +223,9 @@ func (d *device) setRec(action string) string {
 
 // --- fake inference stream -------------------------------------------------
 
-// aiLoop emits one packet per frame with two classes whose scores drift, so the
-// indicators and graph show movement: cls 1 is a slow sine, cls 0 its complement.
+// aiLoop emits one packet per frame with the single artifact class (cls 0) the
+// tiled3x3 model outputs: the estimated proportion of the frame covered by
+// artefacts, drifting on a slow sine so the indicator crosses every icon band.
 func aiLoop(fps int, model string) {
 	t := time.NewTicker(time.Second / time.Duration(fps))
 	defer t.Stop()
@@ -242,8 +243,7 @@ func aiLoop(fps int, model string) {
 			"aoi":   []int{0, 0, 0, 0},
 			"mdl":   model,
 			"det": []map[string]any{
-				{"cls": 0, "scr": round6(1 - v)},
-				{"cls": 1, "scr": round6(v)},
+				{"cls": 0, "scr": round6(v)},
 			},
 		})
 	}

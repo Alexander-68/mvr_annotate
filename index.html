@@ -180,9 +180,9 @@
   }
 
   /* Vision-AI class indicators. Same cluster mechanics as the button clusters
-     (drag / pinch / orient / dock / persist), but each cell is a color-FILLED
-     square readout, not a transparent button, and taps do nothing. Each holds
-     two centered lines: the class label and its live 0..100% score. The
+     (drag / pinch / orient / dock / persist), but each cell is a readout, not a
+     button, and taps do nothing. Each holds the class label above a
+     traffic-light icon for its moving average. The
      tight-stacking / rounded-corner tricks mirror `.cluster button` so a row or
      column of squares shares edges the same way. */
   .cluster .indicator {
@@ -190,9 +190,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 84px;
-    height: 84px;
-    padding: 6px;
+    /* No fixed box: the cell hugs the icon and the label above it (the flex
+       column's stretch still makes every cell as wide as the widest one). */
+    padding: 3px 5px;
     border: 2px solid rgba(255, 255, 255, 0.9);
     border-radius: 0;
     color: #fff;
@@ -205,49 +205,29 @@
   }
 
   .cluster .indicator .ind-label {
-    font-size: 18px;
+    font-size: 9px;
     font-weight: 700;
     line-height: 1.1;
   }
-  /* 2nd line: the running "above-threshold" accumulator (0..100%). The prominent
-     readout now. */
-  .cluster .indicator .ind-acc {
-    font-size: 22px;
-    font-weight: 700;
-    line-height: 1.1;
-  }
-  /* 3rd line: the live real-time percent, half the size, sitting below the
-     accumulator. */
-  .cluster .indicator .ind-pct {
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1.1;
-  }
-  /* A single "REC" chip pinned on the shared border between the first two class
-     indicators while a video is recording. It signals that .ind-acc is now the
-     per-video accumulator (not per-study). Positioned by positionRecBadge() and
-     centered on the boundary point via translate(-50%, -50%). */
-  .cluster .ind-rec {
-    position: absolute;
-    z-index: 3;
-    transform: translate(-50%, -50%);
-    padding: 0 3px;
-    border-radius: 3px;
-    background: rgba(0, 0, 0, 0.72);
-    font-family: system-ui, sans-serif;
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 1.35;
-    letter-spacing: 0.5px;
-    color: #42a8d8;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  /* 2nd line: the traffic-light icon for the class's moving average (good / warn
+     / bad, swapped by updateAiIndicators with hysteresis). Sized in px so it
+     scales with the cluster's transform like everything else. */
+  .cluster .indicator .ind-icon {
+    display: block;
+    width: 48px;
+    height: 48px;
+    margin-top: 2px;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9));
     pointer-events: none;
   }
+  /* Frameless readout (config aiScope.indicatorFrame: false): the outline is
+     only made transparent, not removed, so the 2px border keeps contributing to
+     the box the shared-edge margins are measured against. */
+  .cluster.frameless .indicator {
+    border-color: transparent;
+  }
 
-  /* Vertical stack (default): share the top/bottom edge like the buttons do.
-     Use :first/last-of-type (not -child) so the absolutely-positioned .ind-rec
-     span appended to the cluster doesn't steal the "last" slot from the final
-     indicator and rob it of its rounded bottom corners. */
+  /* Vertical stack (default): share the top/bottom edge like the buttons do. */
   .cluster .indicator:not(:first-of-type) {
     margin-top: -2px;
   }
@@ -823,54 +803,41 @@
   // pinch-zoom, orient, dock, persist) via initCluster, but its cells are not
   // buttons — taps land on non-<button> elements, so selection/long-press are
   // inert (see the pointer handlers, which key off `closest('button')`). Returns
-  // the state, with an `indicators` array of {cls, el, pctEl} for live updates.
-  function createReadoutCluster(id, items, left, top) {
+  // the state, with an `indicators` array of {cls, el, iconEl} for live updates.
+  function createReadoutCluster(id, items, left, top, frame = true) {
     const el = document.createElement('div');
-    el.className = 'cluster';
+    el.className = frame ? 'cluster' : 'cluster frameless';
     const indicators = [];
     for (const it of items) {
       const cell = document.createElement('div');
       cell.className = 'indicator';
-      cell.style.background = it.color;
       const label = document.createElement('span');
       label.className = 'ind-label';
       label.textContent = it.label;
-      // 2nd line: running "above-threshold" accumulator (see updateAiIndicators).
-      const acc = document.createElement('span');
-      acc.className = 'ind-acc';
-      acc.textContent = '–';
-      // 3rd line: the live real-time percent (smaller, sits below the accumulator).
-      const pct = document.createElement('span');
-      pct.className = 'ind-pct';
-      pct.textContent = '–';
+      // 2nd line: the traffic-light icon (src swapped by updateAiIndicators).
+      const icon = document.createElement('img');
+      icon.className = 'ind-icon';
+      icon.alt = '';
       cell.appendChild(label);
-      cell.appendChild(acc);
-      cell.appendChild(pct);
+      cell.appendChild(icon);
       el.appendChild(cell);
       // buf/sum: ring buffer of the last N raw percents for the moving average.
       // ma: the latest moving-averaged percent (null until the first packet),
       // read by the history graph when it collects a time sample.
       // accSum/accCount: the per-STUDY above-threshold accumulator — sum of each
-      // raw sample's overshoot past the threshold and its sample count.
+      // raw sample's overshoot past the threshold and its sample count. No longer
+      // displayed (the icon is the readout) but still summarized per video.
       // vAccSum/vAccCount: the per-VIDEO accumulator, same math but scoped to the
-      // current recording (reset on rec_start, kept across pause/resume). accShown
-      // is the last text painted into accEl (either source, see renderAcc).
-      indicators.push({ cls: it.cls, el: cell, pctEl: pct, accEl: acc,
+      // current recording (reset on rec_start, kept across pause/resume).
+      // iconState: the traffic-light band currently painted into iconEl.
+      indicators.push({ cls: it.cls, label: it.label, el: cell, iconEl: icon,
         threshold: clamp(typeof it.threshold === 'number' ? it.threshold : 50, 0, 99),
-        disp: null, ma: null, buf: [], sum: 0,
+        ma: null, buf: [], sum: 0, iconState: null,
         accSum: 0, accCount: 0,
-        vAccSum: 0, vAccCount: 0, accShown: null });
+        vAccSum: 0, vAccCount: 0 });
     }
-    // A single "REC" chip, pinned by positionRecBadge() onto the shared border
-    // between the first two indicators while a video records; hidden otherwise.
-    const rec = document.createElement('span');
-    rec.className = 'ind-rec';
-    rec.textContent = 'REC';
-    rec.style.display = 'none';
-    el.appendChild(rec);
     const state = initCluster(id, el, left, top, false, false);
     state.indicators = indicators;
-    state.recEl = rec;
     return state;
   }
 
@@ -1379,8 +1346,6 @@
     if (state.horizontal === horizontal) return;
     state.horizontal = horizontal;
     state.el.classList.toggle('horizontal', horizontal);
-    // The reflow moved the shared border; re-pin the REC chip if it's showing.
-    if (state.recEl && recordingActive) positionRecBadge(state);
   }
 
   function buttonLabel(btn) {
@@ -1903,11 +1868,18 @@
         ai.id || 'ai_classes', ai.classes,
         typeof ai.left === 'number' ? ai.left : 40,
         typeof ai.top === 'number' ? ai.top : 20,
+        ai.indicatorFrame !== false, // outlined boxes unless config opts out
       );
-      // Moving-average window (packets) for the displayed percent. Raw scores are
-      // averaged over the last N packets in float; clamp to >=1 (1 == no smoothing).
+      // Moving-average window (packets) behind the icon band and the graph. Raw
+      // scores are averaged over the last N packets in float; clamp to >=1
+      // (1 == no smoothing). At the device's ~20 packets/s, 30 is ~1.5 s.
       aiCluster.maSize = Math.max(1, Math.round(
-        typeof ai.movingAverage === 'number' ? ai.movingAverage : 12));
+        typeof ai.movingAverage === 'number' ? ai.movingAverage : 30));
+      // Traffic-light icons: paths and the two 0..1 band boundaries, each
+      // falling back to the built-in default when the config omits it.
+      aiIcons = { ...aiIcons, ...(ai.icons || {}) };
+      aiIconThresholds = { ...aiIconThresholds, ...(ai.iconThresholds || {}) };
+      if (typeof ai.iconHysteresis === 'number') aiIconHysteresis = ai.iconHysteresis;
       // Default fresh-start orientation: a line of squares. A saved layout (or a
       // later twist/dock) overrides this; only apply it when nothing was restored.
       if (!aiCluster.restored) {
@@ -1965,12 +1937,22 @@
   let aiCluster = null;
   let aiGraph = null;
   // True while a video is actively recording (between rec_start/rec_resume and the
-  // next rec_pause/rec_stop). Gates per-video accumulation and swaps the .ind-acc
-  // readout from per-study to per-video (see handleRecordingAcc / renderAcc).
+  // next rec_pause/rec_stop). Gates per-video accumulation (see handleRecordingAcc).
   let recordingActive = false;
   // Latest AI model name seen on the inference stream (payload.mdl); stamped
   // onto the per-video summary event.
   let aiModel = null;
+  // Traffic-light icon config, overridden from `aiScope` (icons /
+  // iconThresholds / iconHysteresis) at build time. Thresholds and hysteresis
+  // are on the model's native 0..1 scale, not the 0..100 percent the indicators
+  // average in.
+  let aiIcons = {
+    good: 'assets/status-icon-ok-outline.svg',
+    warn: 'assets/status-icon-warn-outline.svg',
+    bad: 'assets/status-icon-bad-outline.svg',
+  };
+  let aiIconThresholds = { good: 0.5, bad: 0.66 };
+  let aiIconHysteresis = 0.01;
 
   // Fail-loud banner shown when the config can't be loaded. The file is the sole
   // source of menu content, so on failure we say why rather than come up blank.
@@ -2149,25 +2131,20 @@
     return Math.round(sum / (count * (100 - thr)) * 100);
   }
 
-  // Paint .ind-acc from whichever accumulator is active: per-video while a video
-  // records, otherwise per-study. Repaints only on a change to avoid churn.
-  function renderAcc(ind) {
-    const pct = recordingActive
-      ? accPercent(ind.vAccSum, ind.vAccCount, ind.threshold)
-      : accPercent(ind.accSum, ind.accCount, ind.threshold);
-    const txt = pct === null ? '–' : `${pct}%`;
-    if (ind.accShown !== txt) {
-      ind.accShown = txt;
-      ind.accEl.textContent = txt;
-    }
+  // Traffic-light band for a 0..1 moving average: `good` below the good
+  // threshold, `bad` above the bad one, `warn` between (see
+  // ref/260814-qc-interface-proposal/README.md). `h` is a hysteresis dead band
+  // around each boundary — a band is only left once the value clears the
+  // boundary by h, so a score dithering on a threshold can't flicker the icon.
+  // `prev` is the band currently painted (null = first sample, no dead band).
+  function iconBand(v, prev, thr, h) {
+    if (prev === null) return v < thr.good ? 'good' : (v > thr.bad ? 'bad' : 'warn');
+    const above = (b) => v >= b + h;
+    const below = (b) => v < b - h;
+    if (prev === 'good') return above(thr.bad) ? 'bad' : (above(thr.good) ? 'warn' : 'good');
+    if (prev === 'bad') return below(thr.good) ? 'good' : (below(thr.bad) ? 'warn' : 'bad');
+    return above(thr.bad) ? 'bad' : (below(thr.good) ? 'good' : 'warn');
   }
-
-  // Hysteresis for the displayed integer percent: keep showing the current value
-  // until the true value moves at least this far from it, so a score dithering
-  // around a rounding boundary (e.g. 45.5%) doesn't flicker between two integers.
-  // 0.8 makes the shown number step UP once the fraction reaches .8 and step back
-  // DOWN only at .2 — a dead band between 0.2 and 0.8 around each .5 boundary.
-  const AI_PCT_HYSTERESIS = 0.8;
 
   function updateAiIndicators(payload) {
     if (!aiCluster) return;
@@ -2193,19 +2170,24 @@
         ind.vAccSum += over;
         ind.vAccCount += 1;
       }
-      renderAcc(ind);
       // Moving average over the last maSize raw percents (float). Push newest,
       // evict oldest once the window is full; keep a running sum to average in O(1).
       ind.buf.push(raw);
       ind.sum += raw;
       if (ind.buf.length > aiCluster.maSize) ind.sum -= ind.buf.shift();
       const v = ind.sum / ind.buf.length;
-      // Keep the raw moving average for the history graph, and repaint the shown
-      // integer only when it leaves the dead band around the current value.
+      // Keep the raw moving average for the history graph, and swap the icon only
+      // when that average crosses a traffic-light boundary (with hysteresis).
       ind.ma = v;
-      if (ind.disp === null || Math.abs(v - ind.disp) >= AI_PCT_HYSTERESIS) {
-        ind.disp = Math.round(v);
-        ind.pctEl.textContent = `${ind.disp}%`;
+      const band = iconBand(v / 100, ind.iconState, aiIconThresholds, aiIconHysteresis);
+      if (band !== ind.iconState) {
+        ind.iconState = band;
+        ind.iconEl.src = aiIcons[band];
+        // Every band change is a timeline event, recording or not (the icon is
+        // what the endoscopist sees, so it is what the timeline records). The
+        // first packet counts too — it establishes the starting band.
+        window.MvrOverlay?.injectTimelineEvent(JSON.stringify(
+          { marker: 'aiScope', event: ind.label, note: band }));
       }
     }
     // Collect one time sample of every class's moving average for the graph,
@@ -2250,32 +2232,10 @@
     'rec_start', 'rec_pause', 'rec_resume', 'rec_stop', 'rec_error', 'snapshot',
   ]);
 
-  // Pin the single REC chip onto the shared border between the first two class
-  // indicators (bottom edge when stacked, right edge when a row). No-op unless
-  // there are at least two indicators to sit between.
-  function positionRecBadge(state) {
-    const rec = state.recEl;
-    if (!rec || state.indicators.length < 2) return;
-    const c0 = state.indicators[0].el;
-    if (state.horizontal) {
-      rec.style.left = `${c0.offsetLeft + c0.offsetWidth - 1}px`;
-      rec.style.top = `${c0.offsetTop + c0.offsetHeight / 2}px`;
-    } else {
-      rec.style.left = `${c0.offsetLeft + c0.offsetWidth / 2}px`;
-      rec.style.top = `${c0.offsetTop + c0.offsetHeight - 1}px`;
-    }
-  }
-
-  // Flip recording state: toggle the single REC chip and re-render each .ind-acc
-  // from the now-active accumulator (per-video while recording, per-study else).
+  // Flip recording state. Nothing is drawn for it — it only gates which
+  // accumulator advances (per-video while recording, per-study always).
   function setRecording(active) {
     recordingActive = active;
-    if (!aiCluster) return;
-    if (aiCluster.recEl) {
-      aiCluster.recEl.style.display = active ? '' : 'none';
-      if (active) positionRecBadge(aiCluster);
-    }
-    for (const ind of aiCluster.indicators) renderAcc(ind);
   }
 
   // Zero the per-video accumulators (on rec_start, and after a rec_stop inject).
@@ -2285,7 +2245,7 @@
   }
 
   // Emit a timeline event carrying each class's per-video above-threshold result
-  // (fired on rec_pause and rec_stop, before the display reverts to per-study).
+  // (fired on rec_pause and rec_stop).
   // Only inject if this session actually folded AI samples during the recording
   // (some class has vAccCount > 0). This is a live-only side effect, but the
   // connect-time replay of `/study/events` can re-deliver a *previous* study's
@@ -2293,7 +2253,12 @@
   // re-fire this with an empty accumulator and leak a spurious `pct:0`
   // video_summary into the new study. A genuine recording with all scores below
   // threshold still has vAccCount > 0, so it keeps injecting its legit pct:0.
+  // Off: the timeline now carries the live icon band changes instead (see
+  // updateAiIndicators). Flip to true to bring the per-video summary back.
+  const INJECT_VIDEO_SUMMARY = false;
+
   function injectVideoAccEvent() {
+    if (!INJECT_VIDEO_SUMMARY) return;
     if (!aiCluster) return;
     if (!aiCluster.indicators.some((ind) => ind.vAccCount > 0)) return;
     const classes = aiCluster.indicators.map((ind) => ({
@@ -2306,8 +2271,8 @@
   }
 
   // Drive the per-video accumulator's lifecycle off the recording events. Pause
-  // and stop both inject the per-video summary and revert the display; only stop
-  // resets the accumulator (pause keeps it so resume continues it).
+  // and stop both inject the per-video summary; only stop resets the accumulator
+  // (pause keeps it so resume continues it).
   function handleRecordingAcc(evName) {
     switch (evName) {
       case 'rec_start':

@@ -12,11 +12,19 @@
   ],
   "aiScope": {
     "id": "ai_classes",
-    "movingAverage": 90,
+    "movingAverage": 30,
+    "icons": {
+      "good": "assets/status-icon-ok-outline.svg",
+      "warn": "assets/status-icon-warn-outline.svg",
+      "bad": "assets/status-icon-bad-outline.svg"
+    },
+    "iconThresholds": { "good": 0.5, "bad": 0.66 },
+    "iconHysteresis": 0.01,
+    "indicatorFrame": false,
     "graph": { "id": "ai_graph", "windowSeconds": 30, "width": 320, "height": 84, "maxSamples": 216000, "downsample": 0,
       "recordingFillColor": "rgba(64, 64, 255, 0.16)", "recordingEdgeColor": "rgba(80, 80, 255, 0.9)", "snapshotColor": "rgba(120, 210, 255, 0.9)" },
     "classes": [
-      { "cls": 0, "label": "Artifact", "color": "#ff69b4", "threshold": 50 }
+      { "cls": 0, "label": "Artefact", "color": "#ff69b4", "threshold": 50 }
     ]
   }
 }

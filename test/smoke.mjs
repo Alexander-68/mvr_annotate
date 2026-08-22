@@ -17,6 +17,31 @@ import { chromium } from 'playwright';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html', '.json': 'application/json', '.png': 'image/png' };
 
+// Scripted /ai/events feed: 20 packets per phase at a score that lands the
+// class-0 moving average in the bad band, then the good one, then warn — i.e.
+// across both traffic-light boundaries in both directions. The phases cycle for
+// as long as the page is open, so the test can poll for each icon in turn
+// whenever it gets there, with no timing assumptions.
+const AI_PHASES = [0.9, 0.1, 0.55];
+let aiFeed = false;
+function serveAiEvents(res) {
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache',
+    connection: 'keep-alive',
+  });
+  let frm = 0;
+  const t = setInterval(() => {
+    const scr = AI_PHASES[Math.floor(frm / 20) % AI_PHASES.length];
+    frm++;
+    res.write(`data: ${JSON.stringify({
+      ts_us: frm * 1000, cam: 100, frm, src: [1280, 720], aoi: [0, 0, 0, 0],
+      mdl: 'smoke', det: [{ cls: 0, scr }, { cls: 1, scr: 0 }],
+    })}\n\n`);
+  }, 20);
+  res.on('close', () => clearInterval(t));
+}
+
 // Minimal static file server rooted at the project dir.
 const server = createServer(async (req, res) => {
   try {
@@ -24,7 +49,14 @@ const server = createServer(async (req, res) => {
     // route comparisons below work on every platform.
     const rel = normalize(decodeURIComponent(req.url.split('?')[0]))
       .replace(/^(\.\.[/\\])+/, '').replace(/\\/g, '/');
-    if (rel === '/ai/events' || rel === '/study/events') {
+    // Off until the menu assertions are done: once packets flow the aiScope
+    // indicators become visible and sit on top of the button clusters.
+    if (rel === '/ai/events') {
+      if (aiFeed) serveAiEvents(res);
+      else { res.writeHead(204); res.end(); }
+      return;
+    }
+    if (rel === '/study/events') {
       res.writeHead(204); res.end(); return;
     }
     // Pin the menu content to the colonoscopy profile so the test exercises the
@@ -91,7 +123,9 @@ async function longPress(locator) {
 }
 
 try {
-  await page.goto(base, { waitUntil: 'networkidle' });
+  // 'load' (not 'networkidle'): the /ai/events SSE stream never goes idle.
+  await page.goto(base, { waitUntil: 'load' });
+  await page.waitForSelector('.cluster-button', { state: 'attached' });
 
   // Read the built clusters' button labels straight from the DOM.
   const clusters = await buttonClusterLabels();
@@ -230,6 +264,33 @@ if (clusters.length !== 3) fail(`expected 3 clusters at load, got ${clusters.len
   const warningVisibleAfterDismiss = await page.locator('.recording-warning.visible').count();
   if (warningVisibleAfterDismiss === 0) ok('dismissed recording warning does not reappear in session');
   else fail('dismissed recording warning reappeared');
+
+  // aiScope traffic light: reload with the scripted feed on (EventSource does
+  // not retry the 204 it got on first load) and watch the class-0 moving average
+  // walk bad -> good -> warn; the icon must follow in that order.
+  aiFeed = true;
+  await page.reload({ waitUntil: 'load' });
+  const icon0 = '.cluster .indicator:first-of-type .ind-icon';
+  for (const want of ['bad', 'ok', 'warn']) {
+    await page.waitForFunction(
+      ([sel, name]) => (document.querySelector(sel)?.getAttribute('src') || '').includes(`-${name}-`),
+      [icon0, want], { timeout: 5000 },
+    ).then(() => ok(`aiScope icon switched to "${want}"`))
+      .catch(() => fail(`aiScope icon never became "${want}"`));
+  }
+
+  // Each band change is also a timeline event: {marker, event: class label, note: band}.
+  const bandEvents = await page.evaluate(() => window.__events
+    .filter((e) => e.marker === 'aiScope' && e.event === 'Blur')
+    .map((e) => e.note));
+  if (['bad', 'good', 'warn'].every((b) => bandEvents.includes(b))) {
+    ok('aiScope band changes injected timeline events');
+  } else {
+    fail(`aiScope band events missing: ${JSON.stringify(bandEvents)}`);
+  }
+  const summaries = await page.evaluate(() => window.__events.filter((e) => e.event === 'video_summary'));
+  if (summaries.length === 0) ok('per-video summary event stays disabled');
+  else fail(`unexpected video_summary events: ${JSON.stringify(summaries)}`);
 
   const shot = join(root, 'test', 'smoke.png');
   await page.screenshot({ path: shot });
