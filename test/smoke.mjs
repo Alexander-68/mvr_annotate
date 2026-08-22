@@ -279,10 +279,10 @@ if (clusters.length !== 3) fail(`expected 3 clusters at load, got ${clusters.len
       .catch(() => fail(`aiScope icon never became "${want}"`));
   }
 
-  // Each band change is also a timeline event: {marker, event: class label, note: band}.
+  // Each band change is also a timeline event: {marker: class label, level: band}.
   const bandEvents = await page.evaluate(() => window.__events
-    .filter((e) => e.marker === 'aiScope' && e.event === 'Blur')
-    .map((e) => e.note));
+    .filter((e) => e.marker === 'Blur' && typeof e.level === 'string')
+    .map((e) => e.level));
   if (['bad', 'good', 'warn'].every((b) => bandEvents.includes(b))) {
     ok('aiScope band changes injected timeline events');
   } else {

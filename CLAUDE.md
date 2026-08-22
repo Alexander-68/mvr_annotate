@@ -45,7 +45,9 @@ cd test/mvrsim && go run .     # http://localhost:3335  (control panel: /mvr/)
 
 Flags: `-addr :3335`, `-root ../..` (folder to serve), `-fps 10` (fake inference
 rate, `0` = off), `-model <name>` (reported `mdl`), `-bg "#000"` (backdrop, `""`
-= off), `-panel=false` (drop the injected control panel).
+= off), `-panel=false` (drop the injected control panel),
+`-timeline timeline.ndjson` (append every study event to this NDJSON file, `""`
+= off).
 
 What it provides:
 
@@ -71,8 +73,13 @@ What it provides:
   standing in for the live camera preview the transparent overlay normally sits
   on.
 
-It simulates the device's *interfaces*, not its storage: nothing is written to a
-`timeline.ndjson`, and the AI packets are synthetic.
+It simulates the device's *interfaces*, not its storage: the AI packets are
+synthetic, and no video is produced. It does keep a timeline: every study event
+(including the `ext` events the page injects) is appended to the `-timeline`
+NDJSON file, one JSON object per line, so a session can be examined afterwards
+(`tail -f test/mvrsim/timeline.ndjson`). Keys are written in a fixed reading
+order (`ts`, `ev`, `marker`, `level`, `status`, `modifier*`, then the rest
+alphabetically) rather than Go's map-sorted order. `*.ndjson` is gitignored.
 
 ## Button clusters (the core UI idea)
 
@@ -197,7 +204,7 @@ Fields:
 - **Live indicators** — each class shows its class label above a **traffic-light icon** for its moving-averaged score (window = `aiScope.movingAverage` packets, default 30 — at ~20 packets/s that is the ~1.5 s the QC proposal asks for). The icon is picked on the model's native `0..1` scale: below `aiScope.iconThresholds.good` (default 0.5) the **good** icon, above `iconThresholds.bad` (default 0.66) the **bad** one, **warn** in between. `aiScope.iconHysteresis` (default 0.01) is a dead band around each boundary — a band is only left once the average clears the boundary by that much, so a score sitting on a threshold can't flicker the icon (`iconBand`). `aiScope.icons` maps `good`/`warn`/`bad` to image paths (default the outline SVGs in `assets/`). Numeric readouts are gone; the icon is the whole readout. The cell background is transparent (the live camera preview shows through); `aiScope.indicatorFrame: false` also hides the cell outline (omitted/`true` keeps it).
 - **Above-threshold accumulators** — per class, each sample contributes its overshoot past the class `threshold` out of the `(100 - threshold)` headroom; the running percent is accumulated overshoot / accumulated headroom. Two accumulators run in parallel: a **per-study** one and a **per-video** one that advances only while recording. Not displayed — they only feed the per-video summary event below.
 - **History graph** — an in-memory ring of `{ t, v: [pct|null, …], frm }` samples (newest last, `v` aligned to `classes`), capped at `aiScope.graph.maxSamples` and optionally coarsened by `aiScope.graph.downsample`. In-memory only — **never persisted** (only the graph's layout/zoom is saved); reset when a new study begins.
-- **Band-change events** — every time a class's icon changes band, `updateAiIndicators()` injects `{marker:"aiScope", event:<class label>, note:"good"|"warn"|"bad"}` onto the timeline. Recording state is irrelevant — the icon is what the endoscopist sees, so it is what the timeline records. The first packet's band counts too (it establishes the starting state).
+- **Band-change events** — every time a class's icon changes band, `updateAiIndicators()` injects `{marker:<class label>, level:"good"|"warn"|"bad"}` onto the timeline — the same `marker`-keyed shape the button events use. `level` deliberately is not `status`: `status` is the buttons' lifecycle (`on`/`off`/`finish`), while a band is a state the class is *in*, never a start or an end. Recording state is irrelevant — the icon is what the endoscopist sees, so it is what the timeline records. The first packet's band counts too (it establishes the starting state).
 - **Per-video summary event** — on `rec_pause`/`rec_stop`, `injectVideoAccEvent()` injects `{marker:"aiScope", event:"video_summary", classes:[{cls,pct},…], model?}` (the `model` field carries the cached `mdl` name). **Currently disabled** by the `INJECT_VIDEO_SUMMARY` constant (the band-change events replaced it); the code and its accumulators are kept, flip the constant to bring it back.
 
 ## Important: notifying the native Android host

@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,6 +171,52 @@ var (
 )
 
 // studyEvent publishes one timeline line: {ts, ev, ...extra}.
+// timeline, if -timeline was given: every study event is appended to it as one
+// JSON object per line, the same NDJSON the device writes as timeline.ndjson.
+// Opened once in main; writes are serialized by timelineMu because studyEvent
+// runs from both request handlers and the aiLoop goroutine.
+var (
+	timelineFile *os.File
+	timelineMu   sync.Mutex
+)
+
+// timelineKeyOrder puts the keys that matter first on a timeline line; anything
+// else follows in alphabetical order. json.Marshal of a map always sorts keys,
+// which buries `marker` behind `ev`/`ip` and makes a scanned line hard to read.
+var timelineKeyOrder = []string{"ts", "ev", "marker", "level", "status",
+	"modifier", "modifier2", "modifier3"}
+
+func marshalOrdered(m map[string]any) ([]byte, error) {
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if !slices.Contains(timelineKeyOrder, k) {
+			rest = append(rest, k)
+		}
+	}
+	slices.Sort(rest)
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for _, k := range append(slices.Clone(timelineKeyOrder), rest...) {
+		v, ok := m[k]
+		if !ok {
+			continue
+		}
+		val, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		if b.Len() > 1 {
+			b.WriteByte(',')
+		}
+		key, _ := json.Marshal(k)
+		b.Write(key)
+		b.WriteByte(':')
+		b.Write(val)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
 func studyEvent(name string, extra map[string]any) {
 	m := map[string]any{"ts": time.Now().UnixMilli(), "ev": name}
 	for k, v := range extra {
@@ -177,6 +224,16 @@ func studyEvent(name string, extra map[string]any) {
 	}
 	studyHub.publish(m)
 	log.Printf("study: %s %v", name, extra)
+	if timelineFile == nil {
+		return
+	}
+	line, err := marshalOrdered(m)
+	if err != nil {
+		return
+	}
+	timelineMu.Lock()
+	defer timelineMu.Unlock()
+	timelineFile.Write(append(line, '\n')) // O_APPEND + unbuffered: tail -f works
 }
 
 // setRec applies one recording/snapshot action and emits its timeline event.
@@ -419,6 +476,7 @@ func main() {
 	bg := flag.String("bg", "#000", "backdrop behind the transparent overlay (CSS color, \"\" = none)")
 	showPanel := flag.Bool("panel", true, "inject the floating device-control panel into served pages")
 	model := flag.String("model", "pd_mobinenetv3l_blur_poor_prep_trained_opset18_fp", "reported model name")
+	timeline := flag.String("timeline", "timeline.ndjson", "append every study event to this NDJSON file (\"\" = off)")
 	flag.Parse()
 
 	abs, err := filepath.Abs(*root)
@@ -427,6 +485,17 @@ func main() {
 	}
 	if _, err := os.Stat(filepath.Join(abs, "index.html")); err != nil {
 		log.Fatalf("no index.html under %s (pass -root)", abs)
+	}
+
+	if *timeline != "" {
+		f, err := os.OpenFile(*timeline, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			log.Fatalf("cannot open timeline file: %v", err)
+		}
+		defer f.Close()
+		timelineFile = f
+		abs, _ := filepath.Abs(*timeline)
+		log.Printf("timeline: appending to %s", abs)
 	}
 
 	mux := http.NewServeMux()

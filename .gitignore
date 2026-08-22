@@ -2,3 +2,5 @@
 node_modules/
 test/*.png
 ref/
+*.ndjson
+test/mvrsim/mvrsim.exe

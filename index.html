@@ -2187,7 +2187,7 @@
         // what the endoscopist sees, so it is what the timeline records). The
         // first packet counts too — it establishes the starting band.
         window.MvrOverlay?.injectTimelineEvent(JSON.stringify(
-          { marker: 'aiScope', event: ind.label, note: band }));
+          { marker: ind.label, level: band }));
       }
     }
     // Collect one time sample of every class's moving average for the graph,
