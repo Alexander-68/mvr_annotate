@@ -32,6 +32,47 @@ zip mvr_annotate.zip index.html fv.png mvr_annotate.json
 
 > **Loading note:** because the page `fetch()`es `mvr_annotate.json` at startup, opening `index.html` directly via `file://` may be blocked by CORS in some browsers/WebViews (the fail-loud banner appears). Serve the folder over HTTP (e.g. `python3 -m http.server`) when viewing locally; on the MVR device it is served over the `LOCAL`/`HTTP(S)` scheme so `fetch` works.
 
+## Device simulator (`test/mvrsim`)
+
+`test/mvrsim` is a dependency-free Go server that serves the repo **and fakes
+the MVR device around it**, so the overlay can be developed on a desktop with
+the AI feed, the recording state, and the bridge all live.
+
+```bash
+cd test/mvrsim && go run .     # http://localhost:3335  (control panel: /mvr/)
+```
+
+Flags: `-addr :3335`, `-root ../..` (folder to serve), `-fps 10` (fake inference
+rate, `0` = off), `-model <name>` (reported `mdl`), `-bg "#000"` (backdrop, `""`
+= off), `-panel=false` (drop the injected control panel).
+
+What it provides:
+
+- **Both SSE feeds**, wire-compatible with `MVR_homeweb_sse.md`: `/ai/events`
+  (latest-only; generated packets with the real `ts_us/cam/frm/src/aoi/mdl/det`
+  shape, `cls` 0/1 drifting on a sine) and `/study/events` (replay buffer on
+  connect, `Last-Event-ID` resume, `retry:` hint, `: ping` keep-alive), plus the
+  `/ai/latest` and `/study/latest` poll fallbacks.
+- **A `window.MvrOverlay` shim**, injected into every served `.html`, so the page
+  detects a device (no `.no-bridge` fallback) and all bridge methods answer:
+  identity, `hasFeature` (everything on, incl. `mvr_aiscope`),
+  `getCurrentStudyPath`, `isRecordingActive`/`getRecordingState` (seeded from
+  `/mvr/state`, then followed off `/study/events`), a no-op `reportInteractive`,
+  and `injectTimelineEvent` — which POSTs to `/mvr/inject`, is logged to the
+  server console, and is re-broadcast on `/study/events` as an `ext` event.
+- **A control panel** injected into every served page (bottom-left, collapsible;
+  the same panel is the whole `/mvr/` page): rec start/pause/resume/stop/error,
+  snapshot, study start/finish, plus a live state line. Its taps stop
+  propagation, so they never reach the clusters underneath. The same actions are
+  plain endpoints — `POST /mvr/rec/start`, `/mvr/snapshot`, `/mvr/study/start`,
+  `/mvr/study/finish`, and `GET /mvr/state`.
+- **A backdrop** (`-bg`, black by default) injected as the last rule in `<head>`,
+  standing in for the live camera preview the transparent overlay normally sits
+  on.
+
+It simulates the device's *interfaces*, not its storage: nothing is written to a
+`timeline.ndjson`, and the AI packets are synthetic.
+
 ## Button clusters (the core UI idea)
 
 The interactive UI is organized into **clusters**. A cluster is a vertically stacked group of buttons that behaves as one unit:
