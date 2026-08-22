@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Status SVG Icons Collection</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#22c55e',
+              600: '#16a34a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    
+    code, pre {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .glass-card-light {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+    }
+
+    .icon-preview-box {
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .icon-preview-box:hover {
+      transform: translateY(-4px) scale(1.02);
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
+
+  <!-- Top Navigation -->
+  <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-amber-500 to-rose-500 p-0.5 shadow-lg shadow-emerald-500/10">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center font-bold text-lg">
+            SVG
+          </div>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">Status Icon Suite</h1>
+          <p class="text-xs text-slate-400 mt-0.5">Vector Icons: OK • Not Very Good • Not Acceptable</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="themeToggleBtn" onclick="toggleTheme()" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors flex items-center gap-2">
+          <svg id="themeIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          <span id="themeLabel">Light Canvas</span>
+        </button>
+        <button onclick="downloadAllSVGs()" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-md shadow-emerald-900/30 transition-all flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          Export All (ZIP/SVGs)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
+    
+    <!-- Left Column: Core Icons Grid & Variations -->
+    <div class="flex-1 flex flex-col gap-8">
+      
+      <!-- Primary Status Showcase Cards -->
+      <section>
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Core Status Indicators</h2>
+            <p class="text-xs text-slate-400">Green Checkmark (OK), Yellow Squiggly ~ (Not Very Good), Bloody Orange Cross (Not Acceptable)</p>
+          </div>
+          <div class="flex bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs font-medium">
+            <button id="viewStyleFlat" onclick="setStylePreset('flat')" class="px-3 py-1 rounded-md bg-slate-800 text-white">Flat</button>
+            <button id="viewStyleGrad" onclick="setStylePreset('gradient')" class="px-3 py-1 rounded-md text-slate-400 hover:text-white">Gradient</button>
+            <button id="viewStyleOutline" onclick="setStylePreset('outline')" class="px-3 py-1 rounded-md text-slate-400 hover:text-white">Outline</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          
+          <!-- Card 1: Green OK -->
+          <div class="glass-card rounded-2xl p-6 flex flex-col items-center relative group border-emerald-500/20 hover:border-emerald-500/40 transition-all">
+            <div class="absolute top-3 right-3 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              OK / Success
+            </div>
+            <div id="container-ok" class="w-32 h-32 my-4 flex items-center justify-center icon-preview-box">
+              <!-- SVG inserted dynamically -->
+            </div>
+            <h3 class="font-bold text-slate-100 text-base">Checkmark (OK)</h3>
+            <p class="text-xs text-slate-400 text-center mt-1 mb-4">Indicates valid, passed, successful, or acceptable status.</p>
+            
+            <div class="w-full flex gap-2 mt-auto">
+              <button onclick="copySvgCode('ok')" class="flex-1 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/60 transition-colors flex items-center justify-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                Copy SVG
+              </button>
+              <button onclick="downloadSingleSvg('ok')" class="py-2 px-3 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-xs font-medium text-emerald-300 border border-emerald-800/50 transition-colors flex items-center justify-center" title="Download SVG File">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 2: Yellow Squiggly / Not Very Good -->
+          <div class="glass-card rounded-2xl p-6 flex flex-col items-center relative group border-amber-500/20 hover:border-amber-500/40 transition-all">
+            <div class="absolute top-3 right-3 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              Warning / Mediocre
+            </div>
+            <div id="container-warn" class="w-32 h-32 my-4 flex items-center justify-center icon-preview-box">
+              <!-- SVG inserted dynamically -->
+            </div>
+            <h3 class="font-bold text-slate-100 text-base">Tilde Mark (Not Very Good)</h3>
+            <p class="text-xs text-slate-400 text-center mt-1 mb-4">Represents a standalone tilde mark (~) for uncertain or poor status.</p>
+            
+            <div class="w-full flex gap-2 mt-auto">
+              <button onclick="copySvgCode('warn')" class="flex-1 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/60 transition-colors flex items-center justify-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                Copy SVG
+              </button>
+              <button onclick="downloadSingleSvg('warn')" class="py-2 px-3 rounded-lg bg-amber-950/60 hover:bg-amber-900/60 text-xs font-medium text-amber-300 border border-amber-800/50 transition-colors flex items-center justify-center" title="Download SVG File">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 3: Bloody Orange Cross / Not Acceptable -->
+          <div class="glass-card rounded-2xl p-6 flex flex-col items-center relative group border-orange-500/20 hover:border-orange-500/40 transition-all">
+            <div class="absolute top-3 right-3 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+              Medical Compliant Alert
+            </div>
+            <div id="container-bad" class="w-32 h-32 my-4 flex items-center justify-center icon-preview-box">
+              <!-- SVG inserted dynamically -->
+            </div>
+            <h3 class="font-bold text-slate-100 text-base">Cross Mark (Not Acceptable)</h3>
+            <p class="text-xs text-slate-400 text-center mt-1 mb-4">Indicates failure or unapproved status using medical-device compliant bloody orange.</p>
+            
+            <div class="w-full flex gap-2 mt-auto">
+              <button onclick="copySvgCode('bad')" class="flex-1 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/60 transition-colors flex items-center justify-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                Copy SVG
+              </button>
+              <button onclick="downloadSingleSvg('bad')" class="py-2 px-3 rounded-lg bg-orange-950/60 hover:bg-orange-900/60 text-xs font-medium text-orange-300 border border-orange-800/50 transition-colors flex items-center justify-center" title="Download SVG File">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Scale Matrix Showcase -->
+      <section class="glass-card rounded-2xl p-6">
+        <h3 class="font-bold text-slate-200 text-sm mb-1">Scale & Crispness Test</h3>
+        <p class="text-xs text-slate-400 mb-6">Designed on a precise 24x24 grid to ensure pixel-perfect legibility from 16px micro-badges to 128px UI hero elements.</p>
+        
+        <div class="space-y-6">
+          <!-- 64px row -->
+          <div class="flex items-center gap-6 pb-4 border-b border-slate-800">
+            <span class="w-16 text-xs text-slate-400 font-mono">64 px</span>
+            <div class="flex items-center gap-8">
+              <div id="scale-ok-64" class="w-16 h-16"></div>
+              <div id="scale-warn-64" class="w-16 h-16"></div>
+              <div id="scale-bad-64" class="w-16 h-16"></div>
+            </div>
+          </div>
+
+          <!-- 32px row -->
+          <div class="flex items-center gap-6 pb-4 border-b border-slate-800">
+            <span class="w-16 text-xs text-slate-400 font-mono">32 px</span>
+            <div class="flex items-center gap-8">
+              <div id="scale-ok-32" class="w-8 h-8"></div>
+              <div id="scale-warn-32" class="w-8 h-8"></div>
+              <div id="scale-bad-32" class="w-8 h-8"></div>
+            </div>
+          </div>
+
+          <!-- 20px row -->
+          <div class="flex items-center gap-6">
+            <span class="w-16 text-xs text-slate-400 font-mono">20 px</span>
+            <div class="flex items-center gap-8">
+              <div id="scale-ok-20" class="w-5 h-5"></div>
+              <div id="scale-warn-20" class="w-5 h-5"></div>
+              <div id="scale-bad-20" class="w-5 h-5"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Contextual UI Usage Examples -->
+      <section class="glass-card rounded-2xl p-6">
+        <h3 class="font-bold text-slate-200 text-sm mb-1">Real-World UI Examples</h3>
+        <p class="text-xs text-slate-400 mb-5">See how these status icons integrate seamlessly into badges, toast notifications, and list items.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Toast Success -->
+          <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-3.5 flex items-start gap-3">
+            <div id="demo-toast-ok" class="w-5 h-5 shrink-0 mt-0.5"></div>
+            <div>
+              <p class="text-xs font-semibold text-emerald-400">Payment Processed</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Your order #4920 has been approved and fulfilled.</p>
+            </div>
+          </div>
+
+          <!-- Toast Warning -->
+          <div class="bg-slate-900/90 border border-amber-500/30 rounded-xl p-3.5 flex items-start gap-3">
+            <div id="demo-toast-warn" class="w-5 h-5 shrink-0 mt-0.5"></div>
+            <div>
+              <p class="text-xs font-semibold text-amber-400">Quality Score Low</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Image resolution is borderline (72 DPI). Consider upgrading.</p>
+            </div>
+          </div>
+
+          <!-- Toast Error -->
+          <div class="bg-slate-900/90 border border-orange-500/30 rounded-xl p-3.5 flex items-start gap-3">
+            <div id="demo-toast-bad" class="w-5 h-5 shrink-0 mt-0.5"></div>
+            <div>
+              <p class="text-xs font-semibold text-orange-400">Validation Failed</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Form submitted with 3 illegal characters in input.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right Sidebar: Interactive Customizer & Code Inspector -->
+    <div class="w-full lg:w-96 flex flex-col gap-6">
+      
+      <!-- Customizer Panel -->
+      <div class="glass-card rounded-2xl p-6 border-slate-700/50 sticky top-20">
+        <div class="flex items-center justify-between mb-5">
+          <h3 class="font-bold text-slate-100 text-sm flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+            SVG Fine-Tuner
+          </h3>
+          <button onclick="resetCustomizer()" class="text-[11px] text-slate-400 hover:text-slate-200 underline">Reset</button>
+        </div>
+
+        <div class="space-y-5 text-xs">
+          
+          <!-- Yellow Tilde Style Option -->
+          <div>
+            <label class="block font-medium text-slate-300 mb-2">Yellow Icon Variant</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="tildeStyleFace" onclick="setTildeStyle('face')" class="px-3 py-2 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-medium text-center">
+                Face (Eyes + ~)
+              </button>
+              <button id="tildeStyleClean" onclick="setTildeStyle('clean')" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 font-medium text-center hover:text-slate-200">
+                Pure ~ Symbol
+              </button>
+            </div>
+          </div>
+
+          <!-- Stroke Thickness -->
+          <div>
+            <div class="flex justify-between text-slate-300 font-medium mb-1.5">
+              <span>Inner Glyph Stroke Width</span>
+              <span id="strokeVal" class="font-mono text-emerald-400">2.2 px</span>
+            </div>
+            <input type="range" id="strokeSlider" min="1.0" max="4.0" step="0.2" value="2.2" oninput="updateCustomizer()" class="w-full accent-emerald-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+          </div>
+
+          <!-- Corner Cap Style -->
+          <div>
+            <label class="block font-medium text-slate-300 mb-2">Stroke Cap & Join</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="capRound" onclick="setStrokeCap('round')" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-medium">Round (Smooth)</button>
+              <button id="capSquare" onclick="setStrokeCap('butt')" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 font-medium">Square (Sharp)</button>
+            </div>
+          </div>
+
+          <!-- Glow Effect Toggle -->
+          <div class="flex items-center justify-between pt-2">
+            <div>
+              <p class="font-medium text-slate-300">Drop Glow Effect</p>
+              <p class="text-[10px] text-slate-400">Adds ambient color glow behind icons</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="glowToggle" onchange="updateCustomizer()" class="sr-only peer">
+              <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+            </label>
+          </div>
+
+          <!-- Color Customizer -->
+          <div class="pt-3 border-t border-slate-800">
+            <label class="block font-medium text-slate-300 mb-2">Palette Overrides</label>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Green (OK)</span>
+                <input type="color" id="colorOk" value="#22c55e" onchange="updateCustomizer()" class="w-7 h-7 bg-transparent rounded cursor-pointer border-0">
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Yellow (Not Very Good)</span>
+                <input type="color" id="colorWarn" value="#eab308" onchange="updateCustomizer()" class="w-7 h-7 bg-transparent rounded cursor-pointer border-0">
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Bloody Orange (Not Acceptable)</span>
+                <input type="color" id="colorBad" value="#ea580c" onchange="updateCustomizer()" class="w-7 h-7 bg-transparent rounded cursor-pointer border-0">
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Code Inspector -->
+          <div class="pt-4 border-t border-slate-800">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-medium text-slate-300">SVG Markup Preview</span>
+              <select id="codeSelect" onchange="updateCodeBox()" class="bg-slate-900 text-slate-300 border border-slate-700 rounded px-2 py-0.5 text-[11px]">
+                <option value="ok">Green Checkmark (OK)</option>
+                <option value="warn">Yellow Tilde (Not Good)</option>
+                <option value="bad">Bloody Orange Cross (Not Acceptable)</option>
+              </select>
+            </div>
+
+            <div class="relative">
+              <pre id="codeDisplay" class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[10px] text-emerald-400 overflow-x-auto max-h-48 leading-relaxed selection:bg-slate-800"></pre>
+              <button onclick="copyCurrentCode()" class="absolute top-2 right-2 px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[10px] text-slate-300 transition-colors">
+                Copy
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 px-4 py-3 rounded-xl bg-slate-900 border border-emerald-500/40 text-slate-100 text-xs shadow-2xl flex items-center gap-2 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+    <span id="toastMsg">SVG Code copied to clipboard!</span>
+  </div>
+
+  <script>
+    // State Configuration
+    const state = {
+      presetStyle: 'flat', // 'flat' | 'gradient' | 'outline'
+      tildeVariant: 'clean', // Default to clean mark only without eyes
+      strokeWidth: 2.2,
+      strokeCap: 'round',
+      glow: false,
+      colors: {
+        ok: '#22c55e',
+        warn: '#eab308',
+        bad: '#ea580c'
+      },
+      isDark: true
+    };
+
+    /**
+     * Generates clean SVG markup dynamically based on current configuration parameters
+     */
+    function generateSVG(type, size = 24) {
+      const sw = state.strokeWidth;
+      const cap = state.strokeCap;
+      const glowFilter = state.glow ? `filter: drop-shadow(0px 4px 10px ${state.colors[type]}66);` : '';
+
+      let content = '';
+      let bgDefs = '';
+      let circleFill = '';
+      let circleStroke = '';
+
+      // Determine Circle Style based on Preset
+      if (state.presetStyle === 'flat') {
+        circleFill = state.colors[type];
+        circleStroke = 'none';
+      } else if (state.presetStyle === 'gradient') {
+        const gradId = `grad-${type}-${Math.random().toString(36).substr(2, 5)}`;
+        bgDefs = `
+    <defs>
+      <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="${state.colors[type]}" stop-opacity="1" />
+        <stop offset="100%" stop-color="${adjustColorBrightness(state.colors[type], -25)}" stop-opacity="1" />
+      </linearGradient>
+    </defs>`;
+        circleFill = `url(#${gradId})`;
+        circleStroke = 'none';
+      } else if (state.presetStyle === 'outline') {
+        circleFill = 'none';
+        circleStroke = state.colors[type];
+      }
+
+      const glyphColor = (state.presetStyle === 'outline') ? state.colors[type] : '#ffffff';
+
+      if (type === 'ok') {
+        // Green Checkmark
+        content = `
+  ${bgDefs}
+  <circle cx="12" cy="12" r="${state.presetStyle === 'outline' ? '10' : '11'}" fill="${circleFill}" stroke="${circleStroke}" stroke-width="2" />
+  <path d="M7 12.5L10.2 15.7L17 8.5" fill="none" stroke="${glyphColor}" stroke-width="${sw}" stroke-linecap="${cap}" stroke-linejoin="${cap}" />`;
+      } 
+      else if (type === 'warn') {
+        // Yellow Tilde (Pure Symbol ~ without eyes)
+        if (state.tildeVariant === 'face') {
+          content = `
+  ${bgDefs}
+  <circle cx="12" cy="12" r="${state.presetStyle === 'outline' ? '10' : '11'}" fill="${circleFill}" stroke="${circleStroke}" stroke-width="2" />
+  <!-- Left & Right Eyes -->
+  <circle cx="8.5" cy="8.5" r="1.3" fill="${glyphColor}" />
+  <circle cx="15.5" cy="8.5" r="1.3" fill="${glyphColor}" />
+  <!-- Squiggly Tilde Mouth ~ -->
+  <path d="M 7.5,14.2 C 9,12.2 10.5,12.2 12,14.2 C 13.5,16.2 15,16.2 16.5,14.2" fill="none" stroke="${glyphColor}" stroke-width="${sw}" stroke-linecap="${cap}" stroke-linejoin="${cap}" />`;
+        } else {
+          // Pure Tilde Icon Center (Mark Only)
+          content = `
+  ${bgDefs}
+  <circle cx="12" cy="12" r="${state.presetStyle === 'outline' ? '10' : '11'}" fill="${circleFill}" stroke="${circleStroke}" stroke-width="2" />
+  <!-- Centered Pure Tilde Symbol ~ -->
+  <path d="M 6.5,12 C 8.5,9.2 10.5,9.2 12,12 C 13.5,14.8 15.5,14.8 17.5,12" fill="none" stroke="${glyphColor}" stroke-width="${sw}" stroke-linecap="${cap}" stroke-linejoin="${cap}" />`;
+        }
+      } 
+      else if (type === 'bad') {
+        // Red Cross Mark
+        content = `
+  ${bgDefs}
+  <circle cx="12" cy="12" r="${state.presetStyle === 'outline' ? '10' : '11'}" fill="${circleFill}" stroke="${circleStroke}" stroke-width="2" />
+  <path d="M8 8L16 16M16 8L8 16" fill="none" stroke="${glyphColor}" stroke-width="${sw}" stroke-linecap="${cap}" stroke-linejoin="${cap}" />`;
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="${getAriaLabel(type)}" style="${glowFilter}">${content}
+</svg>`;
+    }
+
+    function getAriaLabel(type) {
+      if (type === 'ok') return 'OK Success Checkmark Status';
+      if (type === 'warn') return 'Not Very Good Squiggly Tilde Status';
+      return 'Not Acceptable Error Cross Status Medical Compliant';
+    }
+
+    // Helper to darken color for gradients
+    function adjustColorBrightness(hex, percent) {
+      let num = parseInt(hex.replace('#',''), 16),
+      amt = Math.round(2.55 * percent),
+      R = (num >> 16) + amt,
+      G = (num >> 8 & 0x00FF) + amt,
+      B = (num & 0x0000FF) + amt;
+      return '#' + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 + (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255)).toString(16).slice(1);
+    }
+
+    /**
+     * Renders all SVG instances across containers
+     */
+    function renderAll() {
+      // Main showcase cards
+      document.getElementById('container-ok').innerHTML = generateSVG('ok', 110);
+      document.getElementById('container-warn').innerHTML = generateSVG('warn', 110);
+      document.getElementById('container-bad').innerHTML = generateSVG('bad', 110);
+
+      // Scale testing row
+      document.getElementById('scale-ok-64').innerHTML = generateSVG('ok', 64);
+      document.getElementById('scale-warn-64').innerHTML = generateSVG('warn', 64);
+      document.getElementById('scale-bad-64').innerHTML = generateSVG('bad', 64);
+
+      document.getElementById('scale-ok-32').innerHTML = generateSVG('ok', 32);
+      document.getElementById('scale-warn-32').innerHTML = generateSVG('warn', 32);
+      document.getElementById('scale-bad-32').innerHTML = generateSVG('bad', 32);
+
+      document.getElementById('scale-ok-20').innerHTML = generateSVG('ok', 20);
+      document.getElementById('scale-warn-20').innerHTML = generateSVG('warn', 20);
+      document.getElementById('scale-bad-20').innerHTML = generateSVG('bad', 20);
+
+      // Demo toasts
+      document.getElementById('demo-toast-ok').innerHTML = generateSVG('ok', 20);
+      document.getElementById('demo-toast-warn').innerHTML = generateSVG('warn', 20);
+      document.getElementById('demo-toast-bad').innerHTML = generateSVG('bad', 20);
+
+      updateCodeBox();
+    }
+
+    function updateCustomizer() {
+      state.strokeWidth = parseFloat(document.getElementById('strokeSlider').value);
+      document.getElementById('strokeVal').innerText = `${state.strokeWidth.toFixed(1)} px`;
+      
+      state.glow = document.getElementById('glowToggle').checked;
+      state.colors.ok = document.getElementById('colorOk').value;
+      state.colors.warn = document.getElementById('colorWarn').value;
+      state.colors.bad = document.getElementById('colorBad').value;
+
+      renderAll();
+    }
+
+    function setStylePreset(style) {
+      state.presetStyle = style;
+      
+      // Update toggle buttons UI
+      ['Flat', 'Grad', 'Outline'].forEach(s => {
+        const btn = document.getElementById(`viewStyle${s}`);
+        if (s.toLowerCase() === style || (s === 'Grad' && style === 'gradient')) {
+          btn.className = 'px-3 py-1 rounded-md bg-slate-800 text-white shadow-sm';
+        } else {
+          btn.className = 'px-3 py-1 rounded-md text-slate-400 hover:text-white';
+        }
+      });
+
+      renderAll();
+    }
+
+    function setTildeStyle(variant) {
+      state.tildeVariant = variant;
+      const faceBtn = document.getElementById('tildeStyleFace');
+      const cleanBtn = document.getElementById('tildeStyleClean');
+
+      if (variant === 'face') {
+        faceBtn.className = 'px-3 py-2 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-medium text-center';
+        cleanBtn.className = 'px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 font-medium text-center hover:text-slate-200';
+      } else {
+        cleanBtn.className = 'px-3 py-2 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-medium text-center';
+        faceBtn.className = 'px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 font-medium text-center hover:text-slate-200';
+      }
+
+      renderAll();
+    }
+
+    function setStrokeCap(cap) {
+      state.strokeCap = cap;
+      const roundBtn = document.getElementById('capRound');
+      const squareBtn = document.getElementById('capSquare');
+
+      if (cap === 'round') {
+        roundBtn.className = 'px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-medium';
+        squareBtn.className = 'px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 font-medium';
+      } else {
+        squareBtn.className = 'px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 font-medium';
+        roundBtn.className = 'px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 font-medium';
+      }
+
+      renderAll();
+    }
+
+    function resetCustomizer() {
+      state.presetStyle = 'flat';
+      state.tildeVariant = 'clean';
+      state.strokeWidth = 2.2;
+      state.strokeCap = 'round';
+      state.glow = false;
+      state.colors = { ok: '#22c55e', warn: '#eab308', bad: '#ea580c' };
+
+      document.getElementById('strokeSlider').value = 2.2;
+      document.getElementById('strokeVal').innerText = '2.2 px';
+      document.getElementById('glowToggle').checked = false;
+      document.getElementById('colorOk').value = '#22c55e';
+      document.getElementById('colorWarn').value = '#eab308';
+      document.getElementById('colorBad').value = '#ea580c';
+
+      setStylePreset('flat');
+      setTildeStyle('clean');
+      setStrokeCap('round');
+      renderAll();
+    }
+
+    function updateCodeBox() {
+      const activeType = document.getElementById('codeSelect').value;
+      const code = generateSVG(activeType, 24);
+      document.getElementById('codeDisplay').textContent = formatXml(code);
+    }
+
+    function formatXml(xml) {
+      return xml.replace(/></g, '>\n  <').trim();
+    }
+
+    function copySvgCode(type) {
+      const svgCode = generateSVG(type, 24);
+      navigator.clipboard.writeText(svgCode);
+      showToast(`Copied ${type.toUpperCase()} SVG code!`);
+    }
+
+    function copyCurrentCode() {
+      const activeType = document.getElementById('codeSelect').value;
+      copySvgCode(activeType);
+    }
+
+    function downloadSingleSvg(type) {
+      const svgData = generateSVG(type, 24);
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `status-icon-${type}.svg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(`Downloaded status-icon-${type}.svg`);
+    }
+
+    function downloadAllSVGs() {
+      downloadSingleSvg('ok');
+      setTimeout(() => downloadSingleSvg('warn'), 200);
+      setTimeout(() => downloadSingleSvg('bad'), 400);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2500);
+    }
+
+    function toggleTheme() {
+      state.isDark = !state.isDark;
+      const body = document.body;
+      const label = document.getElementById('themeLabel');
+
+      if (state.isDark) {
+        body.className = "bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white";
+        label.innerText = "Light Canvas";
+      } else {
+        body.className = "bg-slate-100 text-slate-800 min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white";
+        label.innerText = "Dark Canvas";
+      }
+    }
+
+    // Initial render on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      renderAll();
+    });
+  </script>
+</body>
+</html>
